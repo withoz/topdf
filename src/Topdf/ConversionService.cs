@@ -66,7 +66,7 @@ public sealed class ConversionService
         var pdf = Path.Combine(job, Path.GetFileNameWithoutExtension(input) + ".pdf");
         var worker = Path.Combine(AppContext.BaseDirectory, "engines", "convert.py");
         if (!File.Exists(worker)) throw new FileNotFoundException("변환 worker 파일이 없습니다.", worker);
-        var python = Environment.GetEnvironmentVariable("TOPDF_PYTHON") ?? "python";
+        var python = AppPaths.Python;
         var info = new ProcessStartInfo(python) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         info.Environment["PYTHONUTF8"] = "1";
         foreach (var arg in new[] { worker, input, pdf, "--oda", FindOda() ?? "" }) info.ArgumentList.Add(arg);

@@ -47,7 +47,7 @@ public static class IndependentConversion
                 arguments = ["--convert-xls", input, pdf];
                 break;
             case ".dwg": case ".dxf":
-                executable = Environment.GetEnvironmentVariable("TOPDF_PYTHON") ?? "python";
+                executable = AppPaths.Python;
                 var worker = Path.Combine(AppContext.BaseDirectory, "engines", "convert.py");
                 arguments = [worker, input, pdf, "--libredwg", Path.Combine(vendor, "libredwg", "dwg2dxf.exe")];
                 break;
@@ -72,7 +72,11 @@ public static class IndependentConversion
         await Task.WhenAll(stdout, stderr);
         await File.WriteAllTextAsync(log, await stdout + Environment.NewLine + await stderr);
         await File.WriteAllTextAsync(Path.Combine(job, "engine.json"), JsonSerializer.Serialize(new { engine = EngineName(input), mode = "independent", executable, arguments, exitCode = process.ExitCode }));
-        if (process.ExitCode != 0 || !File.Exists(pdf)) throw new InvalidOperationException($"{EngineName(input)} 변환 실패. 로그: {log}");
+        if (process.ExitCode != 0 || !File.Exists(pdf)) {
+            var errorFile = pdf + ".error.txt";
+            var reason = File.Exists(errorFile) ? File.ReadLines(errorFile).FirstOrDefault() : null;
+            throw new InvalidOperationException(reason == null ? $"{EngineName(input)} 변환 실패. 로그: {log}" : reason[..Math.Min(reason.Length, 600)]);
+        }
         using var stream = File.OpenRead(pdf);
         var header = new byte[5];
         if (stream.Read(header) != 5 || System.Text.Encoding.ASCII.GetString(header) != "%PDF-") throw new InvalidDataException("유효한 PDF가 생성되지 않았습니다.");

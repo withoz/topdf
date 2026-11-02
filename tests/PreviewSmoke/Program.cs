@@ -9,6 +9,8 @@ internal static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        Environment.SetEnvironmentVariable("TOPDF_DATA_DIR", Path.Combine(AppContext.BaseDirectory, "test-data"));
+        if(args.Length==3 && args[0]=="--auto-folder") return AutoOpenTest.Run(args[1], args[2]);
         if(args.Length==2 && args[0]=="--shell-open") return ShellOpenTest.Run(Path.GetFullPath(args[1]));
         if(args.Length==1 && args[0]=="--export-ui") return ExportUiTest.Run();
         if (args.Length == 3 && args[0] == "--folder") return FolderTest.Run(Path.GetFullPath(args[1]), Path.GetFullPath(args[2]));
@@ -50,8 +52,7 @@ internal static class Program
                 await File.WriteAllTextAsync(rtf, @"{\rtf1\ansi TOPDF embedded preview conversion test.}");
                 window.Add(new[] { rtf });
                 list.SelectedIndex = 2;
-                var convertButton = FindButtons(window).Single(b => (string?)b.Content == "변환 시작");
-                convertButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await window.ConvertPendingAsync();
                 var job = (FileJob)list.SelectedItem;
                 while (job.Status is "대기" or "변환 중") await Task.Delay(100, timeout.Token);
                 if (job.Status != "완료") throw new Exception("Conversion failed: " + job.Detail);

@@ -30,7 +30,7 @@ internal static class ExportUiTest
                 if(!menu.IsOpen)throw new Exception("Adding pending documents should open menu");
                 var host=(Grid)window.FindName("PreviewHost");
                 var root=(Grid)window.FindName("LayoutRoot");
-                if(host.ActualWidth < root.ActualWidth*0.98 || host.ActualHeight < root.ActualHeight-100)throw new Exception("Preview does not fill window");
+                if(host.ActualWidth < root.ActualWidth*0.98 || host.ActualHeight < root.ActualHeight-140)throw new Exception("Preview does not fill window");
                 var row=(DataGridRow)list.ItemContainerGenerator.ContainerFromIndex(0);
                 var checkbox=Descendants(row).OfType<CheckBox>().Single();
                 checkbox.IsChecked=true;

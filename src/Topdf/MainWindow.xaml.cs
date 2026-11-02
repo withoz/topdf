@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     readonly ConversionService converter = new();
     CancellationTokenSource? active;
     Task? viewerInitialization;
+    Task? conversionTask;
     long previewVersion;
     string? allowedPreviewUri;
     ulong previewNavigation;
@@ -39,7 +40,7 @@ public partial class MainWindow : Window
     WindowState previousState;
     WindowStyle previousStyle;
     ResizeMode previousResizeMode;
-    public MainWindow() { InitializeComponent(); Files.ItemsSource = jobs; Closing += (_, e) => { if (active != null) { active.Cancel(); e.Cancel = true; Summary.Text = "변환 취소 중입니다. 완료 후 창을 닫아 주세요."; } if (exporting) { e.Cancel = true; Summary.Text = "PDF 저장 중입니다. 완료 후 창을 닫아 주세요."; } }; Closed += (_, _) => { closed = true; previewVersion++; PdfViewer.Dispose(); }; }
+    public MainWindow() { InitializeComponent(); Files.ItemsSource = jobs; DocumentTabs.ItemsSource = jobs; Closing += (_, e) => { if (active != null) { active.Cancel(); e.Cancel = true; Summary.Text = "변환 취소 중입니다. 완료 후 창을 닫아 주세요."; } if (exporting) { e.Cancel = true; Summary.Text = "PDF 저장 중입니다. 완료 후 창을 닫아 주세요."; } }; Closed += (_, _) => { closed = true; previewVersion++; PdfViewer.Dispose(); }; }
     public void Add(IEnumerable<string> paths)
     {
         foreach (var path in paths.Where(File.Exists))
@@ -91,16 +92,29 @@ public partial class MainWindow : Window
         if (ParentOf<CheckBox>(e.OriginalSource as DependencyObject) != null) return;
         if (ParentOf<DataGridRow>(e.OriginalSource as DependencyObject)?.Item is FileJob { Pdf: not null }) SetMenuOpen(false);
     }
-    void AddFiles(object sender, RoutedEventArgs e) { var dialog = new OpenFileDialog { Multiselect = true, Filter = "모든 파일|*.*" }; if (dialog.ShowDialog() == true) Add(dialog.FileNames); }
-    void FilesDropped(object sender, DragEventArgs e) { if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) Add(paths); }
+    async void AddFiles(object sender, RoutedEventArgs e) { var dialog = new OpenFileDialog { Multiselect = true, Filter = "모든 파일|*.*" }; if (dialog.ShowDialog() == true) await OpenFilesAsync(dialog.FileNames); }
+    async void FilesDropped(object sender, DragEventArgs e) { if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) await OpenFilesAsync(paths); }
     async void ConvertFiles(object sender, RoutedEventArgs e) => await ConvertPendingAsync();
-    public async Task OpenFromShellAsync(IEnumerable<string> arguments)
+    public Task OpenFromShellAsync(IEnumerable<string> arguments) => OpenFilesAsync(arguments.Where(p => !p.StartsWith("--", StringComparison.Ordinal)));
+    public async Task OpenFilesAsync(IEnumerable<string> arguments)
     {
-        var paths = arguments.Where(p => !p.StartsWith("--", StringComparison.Ordinal) && File.Exists(p)).Select(Path.GetFullPath).ToArray();
+        var paths = arguments.Where(File.Exists).Select(Path.GetFullPath).ToArray();
         if (paths.Length == 0) { Summary.Text = "열 파일을 찾을 수 없습니다."; return; }
         Add(paths);
         Files.SelectedItem = jobs.First(j => j.Source.Equals(paths[0], StringComparison.OrdinalIgnoreCase));
         await ConvertPendingAsync();
+    }
+    void CloseDocument(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: FileJob job }) return;
+        if (job.Status == "변환 중") { Summary.Text = "변환 취소 후 탭을 닫아 주세요."; return; }
+        var index = jobs.IndexOf(job);
+        var selected = ReferenceEquals(Files.SelectedItem, job);
+        jobs.Remove(job);
+        if (selected && jobs.Count > 0) Files.SelectedItem = jobs[Math.Min(index, jobs.Count - 1)];
+        if (jobs.Count == 0) { _ = ShowPreviewAsync(null); SetMenuOpen(false); }
+        UpdateCheckedCount();
+        e.Handled = true;
     }
     void RegisterFileAssociations(object sender, RoutedEventArgs e)
     {
@@ -111,7 +125,12 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) { Summary.Text = "연결 프로그램 등록 실패: " + ex.Message; }
     }
-    public async Task ConvertPendingAsync()
+    public Task ConvertPendingAsync()
+    {
+        if (conversionTask is { IsCompleted: false }) return conversionTask;
+        return conversionTask = ConvertQueueAsync();
+    }
+    async Task ConvertQueueAsync()
     {
         if (active != null) return;
         active = new();
@@ -119,12 +138,14 @@ public partial class MainWindow : Window
         CompatibilityMode.IsEnabled = false;
         try
         {
-            foreach (var job in jobs.Where(j => j.Status is "대기" or "실패" or "취소").ToArray())
+            var attempted = new HashSet<FileJob>();
+            while (jobs.FirstOrDefault(j => !attempted.Contains(j) && j.Status is "대기" or "실패" or "취소") is { } job)
             {
+                attempted.Add(job);
                 if (active.IsCancellationRequested) break;
                 job.Status = "변환 중"; job.Detail = "";
                 try {
-                    job.Pdf = await converter.ConvertAsync(job.Source, Path.Combine(AppContext.BaseDirectory, "cache"), active.Token, compatibility);
+                    job.Pdf = await converter.ConvertAsync(job.Source, AppPaths.Cache, active.Token, compatibility);
                     job.Status = "완료"; job.Detail = EngineLabel(job.Source);
                     if (ReferenceEquals(Files.SelectedItem, job)) { await ShowPreviewAsync(job); SetMenuOpen(false); }
                 }
@@ -160,7 +181,7 @@ public partial class MainWindow : Window
 
     async Task InitializeViewerAsync()
     {
-        var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(AppContext.BaseDirectory, "viewer-data"));
+        var environment = await CoreWebView2Environment.CreateAsync(null, AppPaths.Viewer);
         if (closed) return;
         await PdfViewer.EnsureCoreWebView2Async(environment);
         if (closed) return;
