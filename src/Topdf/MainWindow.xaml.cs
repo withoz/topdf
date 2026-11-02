@@ -218,7 +218,7 @@ public partial class MainWindow : Window
         if (Files.SelectedItem is not FileJob { Pdf: { } pdf }) { Summary.Text = "변환이 완료된 파일을 선택해 주세요."; return; }
         try { Process.Start(new ProcessStartInfo(pdf) { UseShellExecute = true }); } catch (Exception ex) { Summary.Text = ex.Message; }
     }
-    void UpdateCheckedCount() => SaveCheckedButton.Content = $"체크한 PDF 저장 ({jobs.Count(j => j.IsChecked)})";
+    void UpdateCheckedCount() => SaveCheckedButton.Content = $"선택 저장 ({jobs.Count(j => j.IsChecked)})";
     void CheckAll(object sender, RoutedEventArgs e) { foreach (var job in jobs) job.IsChecked = true; }
     void UncheckAll(object sender, RoutedEventArgs e) { foreach (var job in jobs) job.IsChecked = false; }
     async void SaveCheckedPdfs(object sender, RoutedEventArgs e)
