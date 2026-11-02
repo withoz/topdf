@@ -6,6 +6,12 @@ public partial class App : Application
 {
     protected override async void OnStartup(StartupEventArgs e)
     {
+        if (e.Args.Length == 3 && e.Args[0] == "--verify-install") {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            base.OnStartup(e);
+            Shutdown(await InstallationVerifier.RunAsync(e.Args[1], e.Args[2]));
+            return;
+        }
         if (e.Args.Length == 3 && e.Args[0] == "--convert-xls") {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             try { await XlsBrowserWorker.ConvertAsync(e.Args[1], e.Args[2]); Shutdown(0); }

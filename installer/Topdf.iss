@@ -7,7 +7,9 @@
 #ifndef Bootstrapper
  #error Bootstrapper must point to the signed Microsoft WebView2 bootstrapper
 #endif
-#define AppVersion "0.2.0"
+#ifndef AppVersion
+ #define AppVersion "0.2.1"
+#endif
 [Setup]
 AppId={{7BB8D838-71D7-4CA3-A7A4-DB997AFCACB9}
 AppName=TOPDF
@@ -21,7 +23,13 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputDir={#OutputDir}
+#ifdef ReleaseSigned
+OutputBaseFilename=TOPDF-Setup-{#AppVersion}-win-x64
+SignTool=topdf
+SignedUninstaller=yes
+#else
 OutputBaseFilename=TOPDF-Setup-{#AppVersion}-win-x64-preview
+#endif
 SetupIconFile=..\src\Topdf\Assets\topdf.ico
 UninstallDisplayIcon={app}\Topdf.exe
 Compression=lzma2/fast

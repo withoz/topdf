@@ -1,10 +1,15 @@
 param(
     [string]$Compiler = '',
     [string]$PythonRuntime = '',
-    [string]$Bootstrapper = ''
+    [string]$Bootstrapper = '',
+    [string]$CertificateThumbprint = '',
+    [string]$SignTool = '',
+    [string]$TimestampUrl = 'http://timestamp.digicert.com',
+    [switch]$MachineStore
 )
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
+$version=([xml](Get-Content (Join-Path $root 'src/Topdf/Topdf.csproj') -Raw)).Project.PropertyGroup.Version | Select-Object -First 1
 if(-not $Compiler){$Compiler=Join-Path $root '.local/inno/ISCC.exe'}
 if(-not $PythonRuntime){$PythonRuntime=Join-Path $root '.local/python-embed/runtime'}
 if(-not $Bootstrapper){$Bootstrapper=Join-Path $root '.local/inno-download/MicrosoftEdgeWebview2Setup.exe'}
@@ -20,6 +25,12 @@ $package=Join-Path $stage 'package'
 New-Item -ItemType Directory -Force $package | Out-Null
 & dotnet publish (Join-Path $root 'src/Topdf/Topdf.csproj') -c Release -r win-x64 --self-contained true -o $package
 if($LASTEXITCODE -ne 0){throw 'Publish failed'}
+if($CertificateThumbprint){
+    if(-not $SignTool){
+        $SignTool=Get-ChildItem (Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin') -Filter signtool.exe -Recurse | Where-Object FullName -Match '\\x64\\' | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+    }
+    & (Join-Path $PSScriptRoot 'Sign-Artifact.ps1') -Path (Join-Path $package 'Topdf.exe'),(Join-Path $package 'Topdf.dll') -CertificateThumbprint $CertificateThumbprint -SignTool $SignTool -TimestampUrl $TimestampUrl -MachineStore:$MachineStore
+}
 $runtime=Join-Path $package 'runtime/python'
 New-Item -ItemType Directory -Force $runtime | Out-Null
 Copy-Item -Path (Join-Path $PythonRuntime '*') -Destination $runtime -Recurse -Force
@@ -49,7 +60,18 @@ $manifest=Get-ChildItem -LiteralPath $package -File -Recurse | ForEach-Object {
 $manifest | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $package 'package-manifest.json') -Encoding utf8
 $output=Join-Path $root 'artifacts/installer'
 New-Item -ItemType Directory -Force $output | Out-Null
-& $Compiler '/Q' "/DPackageDir=$package" "/DOutputDir=$output" "/DBootstrapper=$Bootstrapper" (Join-Path $root 'installer/Topdf.iss')
+$compilerArguments=@('/Q',"/DPackageDir=$package","/DOutputDir=$output","/DBootstrapper=$Bootstrapper","/DAppVersion=$version")
+if($CertificateThumbprint){
+    $machineOption=if($MachineStore){' /sm'}else{''}
+    $command='"'+$SignTool+'" sign /fd SHA256 /td SHA256 /tr "'+$TimestampUrl+'" /s My /sha1 '+$CertificateThumbprint+$machineOption+' $f'
+    $compilerArguments+=@('/DReleaseSigned=1',('/Stopdf='+$command))
+}
+& $Compiler @compilerArguments (Join-Path $root 'installer/Topdf.iss')
 if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
+if($CertificateThumbprint){
+    $installer=Join-Path $output "TOPDF-Setup-$version-win-x64.exe"
+    & $SignTool verify /pa /all /tw $installer
+    if($LASTEXITCODE -ne 0 -or (Get-AuthenticodeSignature $installer).Status -ne 'Valid' -or -not (Get-AuthenticodeSignature $installer).TimeStamperCertificate){throw 'Signed installer verification failed'}
+}
 Write-Host "Package: $package"
 Get-ChildItem $output -Filter '*.exe' | ForEach-Object {Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256}

@@ -1,6 +1,6 @@
 # 설치 파일 제작과 검증
 
-0.2.0은 Windows 10/11 x64용 **로컬 시험 설치판**입니다. 공개 GitHub에는 설치 스크립트와 앱 소스를 올리며 바이너리 공개 릴리스는 아직 게시하지 않습니다.
+0.2.1은 Windows 10/11 x64용 **로컬 시험 설치판**입니다. 공개 GitHub에는 설치 스크립트와 앱 소스를 올리며 바이너리 공개 릴리스는 아직 게시하지 않습니다.
 
 ## 포함 내용
 
@@ -24,7 +24,7 @@ Windows x64의 .NET 10 SDK, Git, Python 3.14 x64/pip, Node.js와 공식 Inno Set
 ./scripts/Build-Installer.ps1 -Compiler 'C:\path\to\ISCC.exe' -Bootstrapper 'C:\path\to\MicrosoftEdgeWebview2Setup.exe'
 ```
 
-공식 [WebView2 배포 페이지](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution)에서 bootstrapper를 받아 Authenticode 서명을 확인하세요. Python 출력 폴더가 이미 있으면 재사용하거나 다른 `-Output`을 지정하세요. 빌드의 `-PythonRuntime`은 준비된 내장 Python 루트를 받습니다. 생성 위치는 `artifacts/installer/TOPDF-Setup-0.2.0-win-x64-preview.exe`입니다. 고유한 staging 폴더를 사용하고 고객 문서·캐시·변환 결과를 제외합니다.
+공식 [WebView2 배포 페이지](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution)에서 bootstrapper를 받아 Authenticode 서명을 확인하세요. Python 출력 폴더가 이미 있으면 재사용하거나 다른 `-Output`을 지정하세요. 빌드의 `-PythonRuntime`은 준비된 내장 Python 루트를 받습니다. 생성 위치는 `artifacts/installer/TOPDF-Setup-0.2.1-win-x64-preview.exe`입니다. 고유한 staging 폴더를 사용하고 고객 문서·캐시·변환 결과를 제외합니다.
 
 ## 데이터와 제거
 
