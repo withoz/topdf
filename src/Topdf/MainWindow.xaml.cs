@@ -6,6 +6,8 @@ using System.Windows;
 using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 namespace Topdf;
 
 public sealed class FileJob : INotifyPropertyChanged
@@ -33,6 +35,10 @@ public partial class MainWindow : Window
     ulong previewNavigation;
     bool closed;
     bool exporting;
+    bool fullscreen;
+    WindowState previousState;
+    WindowStyle previousStyle;
+    ResizeMode previousResizeMode;
     public MainWindow() { InitializeComponent(); Files.ItemsSource = jobs; Closing += (_, e) => { if (active != null) { active.Cancel(); e.Cancel = true; Summary.Text = "변환 취소 중입니다. 완료 후 창을 닫아 주세요."; } if (exporting) { e.Cancel = true; Summary.Text = "PDF 저장 중입니다. 완료 후 창을 닫아 주세요."; } }; Closed += (_, _) => { closed = true; previewVersion++; PdfViewer.Dispose(); }; }
     public void Add(IEnumerable<string> paths)
     {
@@ -45,6 +51,45 @@ public partial class MainWindow : Window
             }
         Summary.Text = $"{jobs.Count}개 파일 · {(CompatibilityMode.IsChecked == true ? "설치형 호환 모드" : "오픈소스 독립 변환 모드")}";
         if (Files.SelectedItem == null && jobs.Count > 0) Files.SelectedItem = jobs[0];
+        SetMenuOpen(Files.SelectedItem is not FileJob { Pdf: not null });
+    }
+    public void SetMenuOpen(bool open) => MenuToggle.IsChecked = open;
+    void OpenMenu(object sender, RoutedEventArgs e) => SetMenuOpen(true);
+    void CloseMenu(object sender, RoutedEventArgs e) => SetMenuOpen(false);
+    void HandleShortcuts(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.F11) { ToggleFullscreen(sender, e); e.Handled = true; }
+        else if (e.Key == Key.M && Keyboard.Modifiers == ModifierKeys.Control) { SetMenuOpen(MenuToggle.IsChecked != true); e.Handled = true; }
+        else if (e.Key == Key.Escape) {
+            if (MenuToggle.IsChecked == true) SetMenuOpen(false);
+            else if (fullscreen) ToggleFullscreen(sender, e);
+            e.Handled = true;
+        }
+    }
+    void ToggleFullscreen(object sender, RoutedEventArgs e)
+    {
+        SetMenuOpen(false);
+        if (!fullscreen) {
+            previousState = WindowState; previousStyle = WindowStyle; previousResizeMode = ResizeMode;
+            WindowState = WindowState.Normal; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; WindowState = WindowState.Maximized;
+        } else {
+            WindowState = WindowState.Normal; WindowStyle = previousStyle; ResizeMode = previousResizeMode; WindowState = previousState;
+        }
+        fullscreen = !fullscreen;
+        FullscreenButton.Content = fullscreen ? "창 모드  F11" : "전체 화면  F11";
+    }
+    static T? ParentOf<T>(DependencyObject? element) where T : DependencyObject
+    {
+        while (element != null) {
+            if (element is T found) return found;
+            element = element is FrameworkContentElement content ? content.Parent : VisualTreeHelper.GetParent(element);
+        }
+        return null;
+    }
+    void PreviewRowClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (ParentOf<CheckBox>(e.OriginalSource as DependencyObject) != null) return;
+        if (ParentOf<DataGridRow>(e.OriginalSource as DependencyObject)?.Item is FileJob { Pdf: not null }) SetMenuOpen(false);
     }
     void AddFiles(object sender, RoutedEventArgs e) { var dialog = new OpenFileDialog { Multiselect = true, Filter = "모든 파일|*.*" }; if (dialog.ShowDialog() == true) Add(dialog.FileNames); }
     void FilesDropped(object sender, DragEventArgs e) { if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) Add(paths); }
@@ -81,7 +126,7 @@ public partial class MainWindow : Window
                 try {
                     job.Pdf = await converter.ConvertAsync(job.Source, Path.Combine(AppContext.BaseDirectory, "cache"), active.Token, compatibility);
                     job.Status = "완료"; job.Detail = EngineLabel(job.Source);
-                    if (ReferenceEquals(Files.SelectedItem, job)) await ShowPreviewAsync(job);
+                    if (ReferenceEquals(Files.SelectedItem, job)) { await ShowPreviewAsync(job); SetMenuOpen(false); }
                 }
                 catch (OperationCanceledException) { job.Status = "취소"; break; }
                 catch (Exception ex) { job.Status = "실패"; job.Detail = ex.Message; if (ReferenceEquals(Files.SelectedItem, job)) await ShowPreviewAsync(job); }
@@ -110,6 +155,7 @@ public partial class MainWindow : Window
         PdfViewer.Visibility = Visibility.Hidden;
         PreviewMessage.Text = message;
         PreviewMessage.Visibility = Visibility.Visible;
+        EmptyPreview.Visibility = Visibility.Visible;
     }
 
     async Task InitializeViewerAsync()
@@ -156,6 +202,7 @@ public partial class MainWindow : Window
             allowedPreviewUri = new Uri(path).AbsoluteUri;
             PdfViewer.CoreWebView2.Navigate(allowedPreviewUri);
             PreviewMessage.Visibility = Visibility.Collapsed;
+            EmptyPreview.Visibility = Visibility.Collapsed;
             PdfViewer.Visibility = Visibility.Visible;
         }
         catch (Exception ex) {

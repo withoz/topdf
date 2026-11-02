@@ -1,51 +1,61 @@
-<Window x:Class="Topdf.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:wv="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf" Title="TOPDF · 모든 문서를 읽는 앱 (현재 5가지)" Icon="Assets/topdf-logo.png" Width="1280" Height="800" MinWidth="900" MinHeight="540" AllowDrop="True" Drop="FilesDropped" Background="#F5F7FA">
- <DockPanel Margin="24">
-  <StackPanel DockPanel.Dock="Top">
-   <StackPanel Orientation="Horizontal"><Image Source="Assets/topdf-logo.png" Width="42" Height="42" Margin="0,0,10,0"/><TextBlock Text="TOPDF" FontSize="28" FontWeight="Bold" Foreground="#17324D" VerticalAlignment="Center"/></StackPanel>
-   <TextBlock Text="모든 문서를 읽는 앱 — 현재 5가지 문서 형식 지원" Margin="0,8,0,4" FontWeight="SemiBold"/>
-   <TextBlock Text="한글 · 워드 · 엑셀 · DWG · DXF | 파일을 끌어놓으면 PDF로 바로 봅니다." Margin="0,0,0,18" Foreground="#607080"/>
-   <WrapPanel Margin="0,0,0,16">
-    <Button Content="파일 추가" Click="AddFiles" Padding="18,8" Margin="0,0,8,0"/>
-    <Button Content="변환 시작" Click="ConvertFiles" Padding="18,8" Margin="0,0,8,0"/>
-    <Button Content="취소" Click="CancelConversion" Padding="18,8" Margin="0,0,8,0"/>
-    <Button Content="외부 앱으로 열기" Click="OpenPdf" Padding="18,8" Margin="0,0,8,0"/>
-    <Button x:Name="SaveCheckedButton" Content="체크한 PDF 저장 (0)" Click="SaveCheckedPdfs" Padding="18,8" Margin="0,0,8,0"/>
-    <Button Content="현재 PDF 저장" Click="SavePdf" Padding="18,8"/>
-   </WrapPanel>
-   <WrapPanel Margin="0,0,0,12">
-    <Button Content="전체 선택" Click="CheckAll" Padding="12,5" Margin="0,0,8,0"/>
-    <Button Content="선택 해제" Click="UncheckAll" Padding="12,5" Margin="0,0,12,0"/>
-    <TextBlock Text="저장할 파일을 체크한 뒤 저장 폴더를 선택하세요." VerticalAlignment="Center" Foreground="#607080"/>
-    <Button Content="연결 프로그램 등록" Click="RegisterFileAssociations" Padding="12,5" Margin="16,0,0,0"/>
-   </WrapPanel>
-   <CheckBox x:Name="CompatibilityMode" Content="설치형 호환 모드 사용 (한글·LibreOffice·ODA)" Checked="ModeChanged" Unchecked="ModeChanged" Margin="0,0,0,12"/>
-  </StackPanel>
-  <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0">
-   <TextBlock x:Name="Summary" Text="파일을 추가해 주세요." TextWrapping="Wrap"/>
-   <TextBlock Text="Office · 한글 · DWG/DXF → PDF · 파일 선택 시 미리보기" Foreground="#607080" Margin="0,8,0,0" TextWrapping="Wrap"/>
-   <TextBlock Text="CAD는 A3 도면 전체 맞춤 미리보기입니다. 정밀 출력 전 축척·글꼴을 확인하세요." Foreground="#607080" Margin="0,4,0,0" TextWrapping="Wrap"/>
-  </StackPanel>
-  <Grid>
-   <Grid.ColumnDefinitions><ColumnDefinition Width="440" MinWidth="300"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*" MinWidth="360"/></Grid.ColumnDefinitions>
-  <DataGrid x:Name="Files" SelectionChanged="SelectionChanged" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single" HeadersVisibility="Column" Background="White">
-   <DataGrid.Columns>
-    <DataGridTemplateColumn Header="저장" Width="48">
-     <DataGridTemplateColumn.CellTemplate>
-      <DataTemplate><CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="PDF 저장 선택"/></DataTemplate>
-     </DataGridTemplateColumn.CellTemplate>
-    </DataGridTemplateColumn>
-    <DataGridTextColumn Header="파일" Binding="{Binding Name}" Width="2*"/>
-    <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="100"/>
-    <DataGridTextColumn Header="안내" Binding="{Binding Detail}" Width="2*"/>
-   </DataGrid.Columns>
-  </DataGrid>
-   <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" Background="#DEE4EC"/>
-   <Grid Grid.Column="2" Background="White">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-    <TextBlock x:Name="PreviewTitle" Text="PDF 미리보기" FontWeight="SemiBold" Margin="14,10" TextTrimming="CharacterEllipsis"/>
-    <wv:WebView2 x:Name="PdfViewer" Grid.Row="1" Visibility="Hidden"/>
-    <TextBlock x:Name="PreviewMessage" Grid.Row="1" Text="PDF 또는 변환이 완료된 파일을 선택하세요." HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="400" Margin="20" Foreground="#607080"/>
+<Window x:Class="Topdf.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:wv="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf" Title="TOPDF · 모든 문서를 읽는 앱 (현재 5가지)" Icon="Assets/topdf-logo.png" Width="1280" Height="800" MinWidth="900" MinHeight="540" AllowDrop="True" Drop="FilesDropped" PreviewKeyDown="HandleShortcuts" Background="#EDF1F5">
+ <Grid x:Name="LayoutRoot">
+  <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Border Background="White" BorderBrush="#DEE5ED" BorderThickness="0,0,0,1">
+   <Grid Margin="10,0">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <ToggleButton x:Name="MenuToggle" Content="☰ 메뉴" AutomationProperties.Name="메뉴" Padding="14,7" VerticalAlignment="Center" ToolTip="파일 목록과 기능 메뉴 (Ctrl+M)"/>
+    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,18,0" VerticalAlignment="Center"><Image Source="Assets/topdf-logo.png" Width="26" Height="26"/><TextBlock Text="TOPDF" FontSize="15" FontWeight="Bold" Foreground="#17324D" VerticalAlignment="Center" Margin="6,0,0,0"/></StackPanel>
+    <TextBlock x:Name="PreviewTitle" Grid.Column="2" Text="PDF 미리보기" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Foreground="#334B63" Margin="0,0,12,0"/>
+    <Button x:Name="FullscreenButton" Grid.Column="3" Content="전체 화면  F11" Click="ToggleFullscreen" Padding="12,7" VerticalAlignment="Center"/>
    </Grid>
+  </Border>
+  <Grid x:Name="PreviewHost" Grid.Row="1" Background="White">
+   <wv:WebView2 x:Name="PdfViewer" Visibility="Hidden"/>
+   <StackPanel x:Name="EmptyPreview" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="460" Margin="24">
+    <TextBlock Text="문서를 크게, 바로 보세요" FontSize="24" FontWeight="SemiBold" Foreground="#17324D" HorizontalAlignment="Center" Margin="0,0,0,14"/>
+    <TextBlock x:Name="PreviewMessage" Text="파일을 끌어놓거나 왼쪽 위 메뉴에서 파일을 추가하세요." TextAlignment="Center" TextWrapping="Wrap" Foreground="#607080" FontSize="14"/>
+    <Button Content="메뉴 열기" Click="OpenMenu" Padding="24,10" HorizontalAlignment="Center" Margin="0,20,0,0"/>
+   </StackPanel>
   </Grid>
- </DockPanel>
+  <Border Grid.Row="2" Background="#F5F7FA" BorderBrush="#DEE5ED" BorderThickness="0,1,0,0" Padding="12,6">
+   <TextBlock x:Name="Summary" Text="메뉴에서 파일 추가 · 파일 드래그앤드롭 · F11 전체 화면" TextTrimming="CharacterEllipsis" Foreground="#607080" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+  </Border>
+  <!-- Popup owns a separate HWND so it remains above the native WebView2 PDF surface. -->
+  <Popup x:Name="ActionMenu" IsOpen="{Binding IsChecked, ElementName=MenuToggle, Mode=TwoWay}" PlacementTarget="{Binding ElementName=MenuToggle}" Placement="Bottom" VerticalOffset="8" StaysOpen="False" AllowsTransparency="True">
+   <Border x:Name="MenuPanel" Width="520" Height="{Binding ActualHeight, ElementName=PreviewHost}" Background="White" BorderBrush="#CCD6E2" BorderThickness="1" CornerRadius="12" Padding="18" PreviewKeyDown="HandleShortcuts">
+    <Grid>
+     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <StackPanel>
+      <DockPanel Margin="0,0,0,12"><Button Content="닫기  Esc" Click="CloseMenu" DockPanel.Dock="Right" Padding="10,5"/><TextBlock Text="파일 및 메뉴" FontSize="20" FontWeight="SemiBold" Foreground="#17324D" VerticalAlignment="Center"/></DockPanel>
+      <TextBlock Text="모든 문서를 읽는 앱 — 현재 5가지 문서 형식 지원" FontWeight="SemiBold" Margin="0,0,0,4"/>
+      <TextBlock Text="한글 · 워드 · 엑셀 · DWG · DXF" Foreground="#607080" Margin="0,0,0,14"/>
+      <WrapPanel>
+       <Button Content="파일 추가" Click="AddFiles" Padding="12,7" Margin="0,0,8,8"/>
+       <Button Content="변환 시작" Click="ConvertFiles" Padding="12,7" Margin="0,0,8,8"/>
+       <Button Content="취소" Click="CancelConversion" Padding="12,7" Margin="0,0,8,8"/>
+       <Button Content="현재 PDF 저장" Click="SavePdf" Padding="12,7" Margin="0,0,8,8"/>
+       <Button Content="외부 앱으로 열기" Click="OpenPdf" Padding="12,7" Margin="0,0,8,8"/>
+       <Button x:Name="SaveCheckedButton" Content="체크한 PDF 저장 (0)" Click="SaveCheckedPdfs" Padding="12,7" Margin="0,0,0,8"/>
+      </WrapPanel>
+      <WrapPanel Margin="0,0,0,8"><Button Content="전체 선택" Click="CheckAll" Padding="10,5" Margin="0,0,8,0"/><Button Content="선택 해제" Click="UncheckAll" Padding="10,5" Margin="0,0,12,0"/><TextBlock Text="저장할 파일을 체크하세요." VerticalAlignment="Center" Foreground="#607080"/></WrapPanel>
+     </StackPanel>
+     <DataGrid x:Name="Files" Grid.Row="1" SelectionChanged="SelectionChanged" PreviewMouseLeftButtonUp="PreviewRowClicked" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single" HeadersVisibility="Column" Background="White" Margin="0,0,0,12">
+      <DataGrid.Columns>
+       <DataGridTemplateColumn Header="저장" Width="44"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="PDF 저장 선택"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+       <DataGridTextColumn Header="파일" Binding="{Binding Name}" Width="2*"/>
+       <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="65"/>
+       <DataGridTextColumn Header="안내" Binding="{Binding Detail}" Width="*"/>
+      </DataGrid.Columns>
+     </DataGrid>
+     <StackPanel Grid.Row="2">
+      <CheckBox x:Name="CompatibilityMode" Content="설치형 호환 모드 (한글·LibreOffice·ODA)" Checked="ModeChanged" Unchecked="ModeChanged" Margin="0,0,0,10"/>
+      <DockPanel><Button Content="연결 프로그램 등록" Click="RegisterFileAssociations" Padding="10,6" DockPanel.Dock="Left" Margin="0,0,10,0"/><Button Content="미리보기로 돌아가기" Click="CloseMenu" Padding="10,6"/></DockPanel>
+      <TextBlock Text="완료된 파일을 클릭하면 메뉴가 닫힙니다. 저장 체크는 메뉴를 유지합니다." TextWrapping="Wrap" Foreground="#607080" Margin="0,10,0,0" FontSize="11"/>
+      <TextBlock Text="CAD: A3 전체 맞춤 미리보기 · 정밀 축척은 별도 확인" Foreground="#607080" Margin="0,5,0,0" FontSize="11"/>
+     </StackPanel>
+    </Grid>
+   </Border>
+  </Popup>
+ </Grid>
 </Window>
