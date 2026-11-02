@@ -1,0 +1,28 @@
+{
+  "native": [
+    {
+      "name": "rhwp", "version": "0.8.7", "kind": "zip",
+      "url": "https://github.com/edwardkim/rhwp/releases/download/v0.8.7/rhwp-v0.8.7-windows-x86_64.zip",
+      "sha256": "f7ac326e98f595ae8fecd8da7a614ee9a37db77bdf938782a8e07c9da473ec6f",
+      "files": ["rhwp/rhwp.exe", "rhwp/LICENSE"]
+    },
+    {
+      "name": "office2pdf", "version": "0.10.0", "kind": "zip",
+      "url": "https://github.com/developer0hye/office2pdf/releases/download/v0.10.0/office2pdf-v0.10.0-x86_64-pc-windows-msvc.zip",
+      "sha256": "3da06d045d69562ca00757716269d4f000c4acf74d4137e401874898bfa3145a",
+      "files": ["office2pdf-v0.10.0-x86_64-pc-windows-msvc/office2pdf.exe", "office2pdf-v0.10.0-x86_64-pc-windows-msvc/README.md"]
+    },
+    {
+      "name": "libredwg", "version": "0.14", "kind": "zip",
+      "url": "https://github.com/LibreDWG/libredwg/releases/download/0.14/libredwg-0.14-win64.zip",
+      "sha256": "1ad7e15344d20b3426c3435b078d82fb84b35062815946b2cca9c5fc9810fea8",
+      "files": ["dwg2dxf.exe", "libredwg-0.dll", "libiconv-2.dll", "libpcre2-16-0.dll", "libpcre2-8-0.dll", "README.txt"]
+    },
+    {
+      "name": "libredwg-source", "version": "0.14", "kind": "tar",
+      "url": "https://github.com/LibreDWG/libredwg/releases/download/0.14/libredwg-0.14.tar.xz",
+      "sha256": "62ebb73b984f865960f20ed26619ea5f8789d5e3fd088fa40a2598384da81275",
+      "files": ["libredwg-0.14/COPYING"], "destination": "libredwg"
+    }
+  ]
+}

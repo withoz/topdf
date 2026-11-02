@@ -1,0 +1,22 @@
+Ream / reamkit 1.33.1, Copyright (c) 2026 Alexandr Krassavin.
+MIT license and bundled dependency license metadata are under licenses/.
+Upstream: https://github.com/alex-krassavin/reamkit
+
+TOPDF modification, 2026-11-02:
+excel/print-model.js shrinkToFit used only the first column width for merged cells.
+The patched calculation sums the visible columns through the merged cell's end,
+bounded by the current print window, and excludes hidden columns.
+Unmerged cell behavior remains the original single-column calculation.
+
+source/ contains upstream and modified source plus a machine-readable change record.
+Original SHA256: 79672a62b27068904b00d7fd2dcadd2a0f09bf354dda4f4f14512cca160d4a68
+Reproducible build: tests/OpenSource/ream-build/package-lock.json and build.mjs.
+Build: npm ci --ignore-scripts; node build.mjs (inside that directory).
+
+Runtime: bundled ES module in the application's existing WebView2 runtime.
+No Node installation, Office, LibreOffice, or online conversion service is used.
+Fonts and input XLS are loaded from local virtual-host mappings only.
+
+Upstream reports legacy XLS Excel table/autofilter limitations; conversion metadata
+retains its losses report. This patch fixes merged-cell amount legibility, not full
+Excel layout equivalence or every legacy workbook feature.

@@ -1,0 +1,28 @@
+<!doctype html><meta charset="utf-8"><title>TOPDF XLS worker</title>
+<script type="module">
+import {convertXls} from './ream.bundle.mjs';
+const urls = [
+ 'https://topdf-input.invalid/input.xls',
+ 'https://topdf-fonts.invalid/malgun.ttf',
+ 'https://topdf-fonts.invalid/malgunbd.ttf'
+];
+const localFetch = globalThis.fetch.bind(globalThis);
+// These are WebView2 virtual hosts mapped to local files; no Internet requests are permitted.
+globalThis.fetch=(url,...args)=>{
+ if(!urls.includes(String(url))) throw new Error('Network or unexpected local resource blocked');
+ return localFetch(url,...args);
+};
+function base64(bytes){
+ const parts=[];
+ for(let i=0;i<bytes.length;i+=32768)parts.push(String.fromCharCode(...bytes.subarray(i,i+32768)));
+ return btoa(parts.join(''));
+}
+try {
+ const [source,regular,bold]=await Promise.all(urls.map(async url=>{
+  const response=await fetch(url); if(!response.ok)throw new Error('Local resource unavailable: '+url);
+  return new Uint8Array(await response.arrayBuffer());
+ }));
+ const result=await convertXls(source,{regular,bold});
+ chrome.webview.postMessage({ok:true,pdf:base64(result.bytes),losses:result.losses});
+}catch(error){chrome.webview.postMessage({ok:false,error:String(error.stack||error)});}
+</script>

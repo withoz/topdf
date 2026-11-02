@@ -1,0 +1,27 @@
+name: Windows build
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/OpenSource/ream-build/package-lock.json
+      - name: Build patched XLS engine
+        shell: pwsh
+        run: ./scripts/Setup-Engines.ps1 -SkipNative
+      - name: Build Windows application
+        run: dotnet build src/Topdf/Topdf.csproj --configuration Release
+      - name: Build UI test harness
+        run: dotnet build tests/PreviewSmoke/PreviewSmoke.csproj --configuration Release
+      - name: Verify selected PDF exports
+        run: dotnet run --project tests/ExportSmoke/ExportSmoke.csproj --configuration Release

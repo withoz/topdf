@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationIcon>Assets/topdf.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets/topdf-logo.png" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <PackageReference Include="MiniPdf" Version="0.43.2" />
+    <Content Include="engines/convert.py" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="engines/requirements.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="engines/vendor/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
