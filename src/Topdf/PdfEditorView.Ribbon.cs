@@ -27,7 +27,12 @@ public partial class PdfEditorView
     void RibbonToolChecked(object sender,RoutedEventArgs e)
     {
         if(EditTool==null || sender is not RadioButton {Tag:string tag} || !int.TryParse(tag,out var index) || index<0)return;
-        ApplyInlineText();EditTool.SelectedIndex=index;
+        ApplyInlineText();
+        if(index is 2 or 3 && TextFont!=null) {
+            foreach(var option in TextFont.Items.Cast<ComboBoxItem>().Where(x=>x.Content.ToString() is not ("Malgun Gothic" or "Gulim" or "Batang")).ToArray())TextFont.Items.Remove(option);
+            if(TextFont.SelectedIndex<0)TextFont.SelectedIndex=0;
+        }
+        EditTool.SelectedIndex=index;
     }
     void RibbonSelectionChanged(object sender,SelectionChangedEventArgs e)
     {

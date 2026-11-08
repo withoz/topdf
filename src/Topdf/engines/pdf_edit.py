@@ -57,7 +57,7 @@ def inspect(path):
     return dict(sourceSha256=source_hash(path), pages=[dict(sourceIndex=i, width=geometry(page)[0], height=geometry(page)[1]) for i, page in enumerate(reader.pages)])
 
 
-def render(path, index, rotation, target, plan_path=None):
+def render(path, index, rotation, target, plan_path=None, max_size=1800):
     reader = open_source(path)
     if not 0 <= index < len(reader.pages) or rotation not in (0, 90, 180, 270): raise ValueError('잘못된 페이지 또는 회전입니다.')
     if target.exists(): raise ValueError('새 미리보기 파일을 지정하세요.')
@@ -68,10 +68,10 @@ def render(path, index, rotation, target, plan_path=None):
         specification = next((p for p in plan['pages'] if p['sourceIndex'] == index), None)
         if specification:
             from pdf_text_edit import cleaned_page
-            cleaned = cleaned_page(path, index, specification.get('elements', []), geometry)
+            cleaned = cleaned_page(path, index, specification.get('elements', []), geometry, rotation)
     with pdfium.PdfDocument(cleaned if cleaned else str(path)) as document:
         page = document[0 if cleaned else index]
-        scale = min(2, 1800/max(page.get_size()))
+        scale = min(2, max(160,min(1800,max_size))/max(page.get_size()))
         bitmap = page.render(scale=scale, rotation=rotation)
         try: bitmap.to_pil().save(target, format='PNG')
         finally: bitmap.close(); page.close()
@@ -96,6 +96,7 @@ def draw_element(canvas, element, width, height, font):
     cx, cy = x+w/2, y+h/2
     if cx-cw/2 < -.5 or cy-ch/2 < -.5 or cx+cw/2 > width+.5 or cy+ch/2 > height+.5: raise ValueError('편집 항목을 페이지 안으로 옮겨 주세요.')
     kind = element['kind']
+    if kind=='replace' and element.get('preserveSourceStyle'):return
     canvas.saveState()
     try:
         canvas.translate(cx, height-cy); canvas.rotate(-angle); canvas.translate(-w/2, -h/2)
@@ -184,17 +185,20 @@ def export(path, plan_path, target):
         if rotation not in (0, 90, 180, 270): raise ValueError('잘못된 페이지 회전입니다.')
         page = writer.pages[position]
         from pdf_text_edit import cleaned_page
-        cleaned = cleaned_page(path, specification['sourceIndex'], specification.get('elements', []), geometry)
+        cleaned = cleaned_page(path, specification['sourceIndex'], specification.get('elements', []), geometry, rotation)
         if cleaned:
             replacement_reader = PdfReader(cleaned); overlays.append(replacement_reader)
             replacement_page = replacement_reader.pages[0]
             for key in ('/Contents', '/Resources'):
-                if key in replacement_page: page[NameObject(key)] = replacement_page[key].clone(writer)
+                if key in replacement_page:
+                    cloned=replacement_page[key].clone(writer)
+                    if key=='/Contents' and hasattr(cloned,'get_data'):cloned=writer._add_object(cloned)
+                    page[NameObject(key)] = cloned
             # PDFium may put page transparency settings in the cleaned page.
             if '/Group' in replacement_page: page[NameObject('/Group')] = replacement_page['/Group'].clone(writer)
         width, height, matrix = geometry(page, rotation)
         if rotation: page.rotate(rotation)
-        elements = specification.get('elements', [])
+        elements = [e for e in specification.get('elements', []) if not(e['kind']=='replace' and e.get('preserveSourceStyle'))]
         if elements:
             # Real PDFs can share content/resources between distinct pages. Isolate
             # the container before merging so overlays cannot leak into other pages.
@@ -230,13 +234,14 @@ def main():
     parser.add_argument('source', type=Path); parser.add_argument('output', type=Path)
     parser.add_argument('--page', type=int, default=0); parser.add_argument('--rotation', type=int, default=0)
     parser.add_argument('--plan', type=Path)
+    parser.add_argument('--max-size',type=int,default=1800)
     args = parser.parse_args()
     if args.operation == 'inspect': args.output.write_text(json.dumps(inspect(args.source), ensure_ascii=False), encoding='utf-8')
     elif args.operation == 'text':
         open_source(args.source)
         from pdf_text_edit import text_layer
         args.output.write_text(json.dumps(text_layer(args.source, args.page, geometry), ensure_ascii=False), encoding='utf-8')
-    elif args.operation == 'render': render(args.source, args.page, args.rotation, args.output, args.plan)
+    elif args.operation == 'render': render(args.source, args.page, args.rotation, args.output, args.plan, args.max_size)
     else: export(args.source, args.plan, args.output)
 
 

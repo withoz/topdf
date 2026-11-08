@@ -26,6 +26,6 @@ jobs:
       - name: Build smart feature test harness
         run: dotnet build tests/Smart/Smart.csproj --configuration Release
       - name: Validate offline document worker syntax
-        run: python -m py_compile src/Topdf/engines/convert.py src/Topdf/engines/document_tools.py src/Topdf/engines/pdf_edit.py src/Topdf/engines/pdf_text_edit.py
+        run: python -m py_compile src/Topdf/engines/convert.py src/Topdf/engines/document_tools.py src/Topdf/engines/pdf_edit.py src/Topdf/engines/pdf_text_edit.py src/Topdf/engines/pdf_typography.py
       - name: Verify selected PDF exports
         run: dotnet run --project tests/ExportSmoke/ExportSmoke.csproj --configuration Release

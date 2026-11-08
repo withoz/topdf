@@ -88,15 +88,20 @@ def groups(page, pdf_page, geometry):
             value = text.get_text_range(i, 1)
             box = text.get_charbox(i)
             if not all(math.isfinite(v) for v in box): continue
-            record = chunks.setdefault(key, dict(path=handles[key][0], obj=handles[key][1], text='', boxes=[], size=0, angled=False))
+            record = chunks.setdefault(key, dict(path=handles[key][0], obj=handles[key][1], text='', boxes=[], glyphs=[], size=0, angled=False))
+            if value in ('\r','\n'):continue
             record['text'] += value
-            record['size'] = max(record['size'], pdfium.raw.FPDFText_GetFontSize(text, i))
+            from pdf_typography import glyph
+            detail=glyph(text,i,handles[key][1],value)
+            if detail:detail['path']=record['path'];record['glyphs'].append(detail)
+            matrix=handles[key][1].get_matrix()
+            record['size'] = handles[key][1].get_font_size()*math.hypot(matrix.c,matrix.d)
             angle=pdfium.raw.FPDFText_GetCharAngle(text,i)
             if min(abs(angle),abs(angle-2*math.pi))>.02:record['angled']=True
             if value.strip() and box[2] > box[0] and box[3] > box[1]: record['boxes'].append(box)
     records = []
     for c in chunks.values():
-        if c['angled'] or not c['text'].strip() or '\ufffd' in c['text'] or not c['boxes']: continue
+        if any(g['mode'] not in (0,1,2) for g in c['glyphs']) or c['angled'] or not c['text'].strip() or '\ufffd' in c['text'] or not c['boxes']: continue
         boxes = c.pop('boxes')
         c['box'] = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
         l,b,r,t = c['box']
@@ -124,10 +129,13 @@ def groups(page, pdf_page, geometry):
         return ((d*x-c*y)/det, height-(-b*x+a*y)/det)
     unit=float(pdf_page.get('/UserUnit',1)); output=[]
     for run in runs:
-        text='';end=None
+        text='';end=None;glyphs=[]
         for chunk in run:
-            if end is not None and chunk['box'][0]-end > chunk['size']*.22 and not text.endswith(' ') and not chunk['text'].startswith(' '): text+=' '
-            text+=chunk['text'];end=chunk['box'][2]
+            if end is not None and chunk['box'][0]-end > chunk['size']*.22 and not text.endswith(' ') and not chunk['text'].startswith(' '):
+                text+=' '
+                if glyphs:
+                    previous=glyphs[-1];space=dict(previous);space.update(char=' ',path=None,x=previous['x']+previous['a']*previous['width'],y=previous['y']+previous['b']*previous['width']);glyphs.append(space)
+            text+=chunk['text'];glyphs.extend(chunk['glyphs']);end=chunk['box'][2]
         if len(text)>5000:continue
         paths=[c['path'] for c in run]
         l=min(c['box'][0] for c in run); bot=min(c['box'][1] for c in run)
@@ -136,13 +144,18 @@ def groups(page, pdf_page, geometry):
         x=min(p[0] for p in corners);y=min(p[1] for p in corners)
         w=max(p[0] for p in corners)-x;h=max(p[1] for p in corners)-y
         if x<-.5 or y<-.5 or x+w>width+.5 or y+h>height+.5:continue
-        size=min(96,max(6,max(min(c['size'],(c['box'][3]-c['box'][1])*1.4) for c in run)*unit))
-        ew=(r-l)*unit+4;eh=max((top-bot)*unit+size*.65+2,size*1.7+2)
+        if not glyphs:continue
+        size=min(300,max(.1,max(c['size'] for c in run)*unit))
+        first=glyphs[0];baseline=display(first['x'],first['y'])
+        ascent=size*.86;ew=max((r-first['x'])*unit,size)+2;eh=size*1.35+2
+        center=display(first['x']+ew/2/unit,first['y']+(ascent-eh/2)/unit)
+        for i,glyph in enumerate(glyphs):
+            glyph['advance']=(glyphs[i+1]['x']-glyph['x']) if i+1<len(glyphs) else math.hypot(glyph['a'],glyph['b'])*glyph['width']
         rgba=[ctypes.c_uint() for _ in range(4)]
         ok=pdfium.raw.FPDFPageObj_GetFillColor(run[0]['obj'],*[ctypes.byref(v) for v in rgba])
         color=('#%02X%02X%02X'%tuple(v.value for v in rgba[:3])) if ok else '#111111'
         output.append(dict(id=hashlib.sha256('|'.join(paths).encode()).hexdigest()[:24],text=text,paths=paths,x=x,y=y,width=w,height=h,
-                           editX=x+w/2-ew/2,editY=y+h/2-eh/2,editWidth=ew,editHeight=eh,fontSize=size,color=color,rotation=pdf_page.rotation%360))
+                           editX=center[0]-ew/2,editY=center[1]-eh/2,editWidth=ew,editHeight=eh,fontSize=size,color=color,rotation=pdf_page.rotation%360,baselineX=baseline[0],baselineY=baseline[1],fontFamily=__import__('pdf_typography').name(first['font']),_glyphs=glyphs))
     return output
 
 
@@ -152,40 +165,26 @@ def text_layer(path,index,geometry):
     except ValueError:return []
     with pdfium.PdfDocument(source) as document:
         with closing(document[0]) as page:
-            return groups(page,reader.pages[index],geometry)
+            return [{k:v for k,v in g.items() if not k.startswith('_')} for g in groups(page,reader.pages[index],geometry)]
 
 
-def cleaned_page(path,index,elements,geometry):
+def cleaned_page(path,index,elements,geometry,rotation=0):
     replacements=[e for e in elements if e['kind']=='replace']
     if not replacements:return None
-    reader=PdfReader(path)
-    with pdfium.PdfDocument(editable_page(path,index)) as document:
+    reader=PdfReader(path);source=editable_page(path,index)
+    with pdfium.PdfDocument(source) as document:
         with closing(document[0]) as page:
-            with closing(page.get_textpage()) as original_text:
-                expected=Counter(c for c in original_text.get_text_range() if not c.isspace())
+            with closing(page.get_textpage()) as text:expected=Counter(c for c in text.get_text_range() if not c.isspace())
             available={g['id']:g for g in groups(page,reader.pages[index],geometry)}
             by_path={entry[0]:entry[1] for entry in objects(page).values()}
-            chosen=[];used=set()
             for item in replacements:
                 group=available.get(item.get('sourceTextId'))
-                if group is None or group['text']!=item.get('sourceText'): raise ValueError('원본 글자 선택 정보가 다릅니다. PDF를 다시 열어 주세요.')
+                if group is None or group['text']!=item.get('sourceText'):raise ValueError('원본 글자 선택 정보가 다릅니다. PDF를 다시 열어 주세요.')
                 expected.subtract(c for c in group['text'] if not c.isspace())
-                for key in group['paths']:
-                    if key in used: raise ValueError('동일한 본문을 두 번 수정할 수 없습니다.')
-                    used.add(key);chosen.append(by_path[key])
-            for obj in chosen:page.remove_obj(obj);obj.close()
-            def prune(form=None,depth=0):
-                for obj in list(page.get_objects(form=form,max_depth=1,level=depth)):
-                    if obj.type != pdfium.raw.FPDF_PAGEOBJ_FORM: continue
-                    prune(obj,depth+1)
-                    if pdfium.raw.FPDFFormObj_CountObjects(obj)==0:
-                        page.remove_obj(obj);obj.close()
-            prune()
-            page.gen_content()
-        output=io.BytesIO();document.save(output);output.seek(0)
-        with pdfium.PdfDocument(output) as check:
-            with closing(check[0]) as checked_page, closing(checked_page.get_textpage()) as text:
-                actual=Counter(c for c in text.get_text_range() if not c.isspace())
-                if +expected != actual:raise ValueError('수정하지 않은 본문 보존 검사를 통과하지 못했습니다. 원본은 변경되지 않았습니다.')
-        output.seek(0)
-        return output
+                if item.get('preserveSourceStyle'):expected.update(c for c in item.get('text','') if not c.isspace())
+            from pdf_typography import preserved_page
+            source.seek(0);output=preserved_page(source,available,by_path,replacements,reader.pages[index],geometry,rotation)
+    with pdfium.PdfDocument(output) as check:
+        with closing(check[0]) as page,closing(page.get_textpage()) as text:actual=Counter(c for c in text.get_text_range() if not c.isspace())
+    if +expected!=actual:raise ValueError('원문 글꼴의 문자 지원 또는 수정하지 않은 본문 보존 검사를 통과하지 못했습니다.')
+    output.seek(0);return output

@@ -35,7 +35,7 @@ internal static class InlinePdfEditUiTest
                 var bitmap=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(window);
                 var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));
                 using(var output=File.Create(Path.Combine(Path.GetDirectoryName(source)!,"inline-editor-ui.png")))png.Save(output);
-                Descendants(editor).OfType<Button>().Single(b=>(string?)b.Content=="내용 적용").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Descendants(editor).OfType<Button>().Single(b=>(b.Content as string)=="내용 적용").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 if(editor.CurrentPlan.Pages[0].Elements.Single().Kind!="replace")throw new Exception("Inline text was not applied");
                 editor.Undo();if(editor.CurrentPlan.Pages[0].Elements.Count!=0)throw new Exception("Undo original text failed");
                 editor.Redo();if(editor.CurrentPlan.Pages[0].Elements.Single().Text!="수정 금액 987,654원")throw new Exception("Redo replacement failed");

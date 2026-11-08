@@ -10,7 +10,7 @@ public partial class PdfEditorView
     public bool IsBusy=>saving||changingView;
     public Func<Task<PdfViewingPosition?>>? ReadViewingPosition {get;set;}
     public void RequestPdfSave()=>SaveEditedPdf(this,new RoutedEventArgs());
-    public bool IsViewing => NativeViewingHost?.Content!=null && NativeViewingHost.Visibility==Visibility.Visible;
+    public bool IsViewing => NativeViewingHost?.Content!=null && (NativeViewingHost.Visibility==Visibility.Visible||SpreadPages.Visibility==Visibility.Visible);
     public bool HasPlanChanges => info!=null && (plan.Pages.Count!=info.Pages.Length || plan.Pages.Where((p,i)=>p.SourceIndex!=i || p.Rotation!=0 || p.Elements.Count!=0).Any());
     public Func<string,int,double,Task>? NavigateViewingPdf {get;set;}
     string? viewingPath, viewingPlan;
@@ -35,8 +35,8 @@ public partial class PdfEditorView
     public void EnterEditing()
     {
         if(NativeViewingHost.Content==null || info==null || saving)return;
-        NativeViewingHost.Visibility=Visibility.Collapsed;((FrameworkElement)NativeViewingHost.Content).Visibility=Visibility.Collapsed;EditingArea.Visibility=Visibility.Visible;
-        RibbonSelectionChanged(this,new SelectionChangedEventArgs(SelectorEvent,Array.Empty<object>(),Array.Empty<object>()));
+        SpreadPages.Visibility=Visibility.Collapsed;NativeViewingHost.Visibility=Visibility.Collapsed;((FrameworkElement)NativeViewingHost.Content).Visibility=Visibility.Collapsed;EditingArea.Visibility=Visibility.Visible;
+        RefreshPagePane();RibbonSelectionChanged(this,new SelectionChangedEventArgs(SelectorEvent,Array.Empty<object>(),Array.Empty<object>()));
     }
     async void RibbonToolClicked(object sender,RoutedEventArgs e)
     {
@@ -51,7 +51,7 @@ public partial class PdfEditorView
         if(!IsViewing){EnterEditing();return;}if(changingView||saving||info==null)return;
         changingView=true;EnableEditing(false);
         try {
-            var position=ReadViewingPosition==null?null:await ReadViewingPosition();
+            var position=SpreadPages.Visibility==Visibility.Visible?new PdfViewingPosition(EditPages.SelectedIndex+1,spreadRows.SelectMany(x=>x).FirstOrDefault(x=>x.Index==EditPages.SelectedIndex)?.Width??0):ReadViewingPosition==null?null:await ReadViewingPosition();
             if(position!=null && position.Page>=1 && position.Page<=plan.Pages.Count) {
                 EditPages.SelectedIndex=position.Page-1;
                 if(position.PageWidth>0) {
@@ -69,7 +69,7 @@ public partial class PdfEditorView
     {
         if(info==null || saving)throw new InvalidOperationException("문서 준비가 끝난 뒤 사용하세요.");
         EndGraphic();FinishObjectDrag();ApplyInlineText();
-        if(selectedSource!=null && inlineText!=null && inlineText.Text!=selectedSource.Text)throw new InvalidOperationException("입력 내용을 적용한 뒤 다시 시도하세요.");
+        if(selectedSource!=null && inlineText!=null && inlineText.Text!=(Page?.Elements.FirstOrDefault(x=>x.SourceTextId==selectedSource.Id)?.Text??selectedSource.Text))throw new InvalidOperationException("입력 내용을 적용한 뒤 다시 시도하세요.");
         if(!HasPlanChanges)return snapshot;
         var state=JsonSerializer.Serialize(plan,ProjectJson);
         if(viewingPath!=null && viewingPlan==state && File.Exists(viewingPath))return viewingPath;
@@ -85,11 +85,12 @@ public partial class PdfEditorView
             PenOptions.IsChecked=TextToolsButton.IsChecked=DrawingToolsButton.IsChecked=MarkupToolsButton.IsChecked=MoreOptions.IsChecked=false;
             var path=await GetViewingPdfAsync();
             EnableEditing(false);
-            if(NavigateViewingPdf!=null)await NavigateViewingPdf(path,EditPages.SelectedIndex+1,(EditSurface.LayoutTransform as System.Windows.Media.ScaleTransform)?.ScaleX*75 ?? 75);
+            if(ViewColumns==1 && NavigateViewingPdf!=null)await NavigateViewingPdf(path,EditPages.SelectedIndex+1,(EditSurface.LayoutTransform as System.Windows.Media.ScaleTransform)?.ScaleX*75 ?? 75);
+            if(ViewColumns>1)BuildSpreads(path);
             selectedSource=null;selectedId="";selectedIds.Clear();
-            EditingArea.Visibility=Visibility.Collapsed;NativeViewingHost.Visibility=Visibility.Visible;viewer.Visibility=Visibility.Visible;
+            EditingArea.Visibility=Visibility.Collapsed;NativeViewingHost.Visibility=ViewColumns==1?Visibility.Visible:Visibility.Collapsed;SpreadPages.Visibility=ViewColumns>1?Visibility.Visible:Visibility.Collapsed;viewer.Visibility=ViewColumns==1?Visibility.Visible:Visibility.Collapsed;RefreshPagePane();
             RibbonSelectionChanged(this,new SelectionChangedEventArgs(SelectorEvent,Array.Empty<object>(),Array.Empty<object>()));
-            EditStatus.Visibility=Visibility.Collapsed;EditStatus.Text="보기";viewer.Focus();
+            EditStatus.Visibility=Visibility.Collapsed;EditStatus.Text="보기";if(ViewColumns==1)viewer.Focus();else SpreadPages.Focus();
         } catch(OperationCanceledException) {} catch(Exception ex){EditStatus.Visibility=Visibility.Visible;EditStatus.Text=ex.Message;}
         finally{changingView=false;EnableEditing(info!=null&&!saving);}
     }

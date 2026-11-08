@@ -28,3 +28,5 @@ Ream은 병합 셀의 shrink-to-fit 계산을 보정합니다. 변경 내역·�
 LibreDWG는 별도 프로세스로 실행하지만 이것만으로 배포 의무가 사라지는 것으로 판단하지 않습니다. 공개 바이너리 배포 전 엔진 DLL·하위 의존성·대응 소스 및 글꼴 고지를 포함해 전체 패키지를 검토해야 합니다.
 
 HWP 엔진은 고정된 rhwp 0.8.7 소스에 `src/Topdf/engines/rhwp/layout.patch`를 적용합니다. 원본 MIT 고지와 패치, 소스·패치·바이너리 SHA-256 정보를 엔진 폴더에 포함합니다. 변경 범위와 검증 한계는 `docs/HWP-LAYOUT-FIX.md`를 참고하세요.
+
+- fontTools 4.68.0 (MIT): 로컬 설치 글꼴 이름과 문자 지원 확인에 사용합니다. https://github.com/fonttools/fonttools

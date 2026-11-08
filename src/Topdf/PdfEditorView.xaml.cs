@@ -94,6 +94,7 @@ public partial class PdfEditorView : UserControl
     }
     void BindPages(int index)
     {
+        for(int i=0;i<plan.Pages.Count;i++)plan.Pages[i].DisplayNumber=i+1;
         updating = true; EditPages.ItemsSource = null; EditPages.ItemsSource = plan.Pages;
         EditPages.SelectedIndex = Math.Clamp(index, 0, plan.Pages.Count-1); updating = false;
     }
@@ -114,7 +115,7 @@ public partial class PdfEditorView : UserControl
                 if(version!=renderVersion || token.IsCancellationRequested)return;
                 sourceTexts[page.SourceIndex]=texts;
             }
-            var replacements = string.Join(",",page.Elements.Where(e=>e.Kind=="replace").Select(e=>e.SourceTextId).Order());
+            var replacements = System.Text.Json.JsonSerializer.Serialize(page.Elements.Where(e=>e.Kind=="replace"));
             var key = $"{page.SourceIndex}:{page.Rotation}:{replacements}";
             if (!renders.TryGetValue(key, out var image)) {
                 image = await PdfEditService.RenderAsync(snapshot, work, page.SourceIndex, page.Rotation, token, plan);
@@ -127,7 +128,7 @@ public partial class PdfEditorView : UserControl
             DrawElements(); ApplyZoom(); EditSurface.Visibility = Visibility.Visible; EditCanvas.IsEnabled = !saving;
             EditStatus.Text = sourceTexts[page.SourceIndex].Length == 0 ? $"{EditPages.SelectedIndex+1}/{plan.Pages.Count}쪽 · 선택 가능한 본문이 없습니다. 스캔·윤곽선·특수 PDF 구조는 OCR 또는 원본 수정이 필요합니다." : $"{EditPages.SelectedIndex+1}/{plan.Pages.Count}쪽 · 본문 클릭 → 직접 입력 → Enter 적용";
         } catch (OperationCanceledException) { }
-        catch (Exception ex) { if (version == renderVersion) EditStatus.Text = ex.Message; }
+        catch (Exception ex) { if (version == renderVersion){EditStatus.Visibility=Visibility.Visible;EditStatus.Text=ex.Message;EditSurface.Visibility=Visibility.Visible;EditCanvas.IsEnabled=!saving;} }
     }
     BitmapImage LoadImage(string path)
     {
@@ -146,10 +147,11 @@ public partial class PdfEditorView : UserControl
         DrawSourceTexts();
         selectedIds.IntersectWith(Page.Elements.Select(x=>x.Id));
         foreach (var element in Page.Elements) {
+            if(selectedSource!=null && element.SourceTextId==selectedSource.Id)continue;
             if (DrawGraphic(element)) continue;
             var padding = element.Kind == "note" ? 7.0 : 1;
             FrameworkElement content = element.Kind == "stamp" ? new Image { Source = LoadImage(element.ImagePath!), Stretch = Stretch.Fill } :
-                new TextBlock { Text = element.Text, FontFamily = new FontFamily(element.FontFamily), TextAlignment = AlignmentOf(element), FontSize = element.FontSize, LineHeight = element.FontSize*1.35, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)new BrushConverter().ConvertFromString(element.Color)! };
+                element.Kind=="replace" && element.PreserveSourceStyle ? new Border {Background=Brushes.Transparent} : new TextBlock { Text = element.Text, FontFamily = new FontFamily(element.FontFamily), TextAlignment = AlignmentOf(element), FontSize = element.FontSize, LineHeight = element.FontSize*1.35, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)new BrushConverter().ConvertFromString(element.Color)! };
             var border = new Border { Width = element.Width, Height = element.Height, Child = content, Padding = new Thickness(element.Kind == "stamp" ? 0 : padding), Background = element.Kind == "note" ? new SolidColorBrush(Color.FromRgb(255,243,175)) : Brushes.Transparent, BorderThickness = new Thickness((element.Id == selectedId || selectedIds.Contains(element.Id)) ? 1 : 0), BorderBrush = Brushes.DodgerBlue, Tag = element, RenderTransformOrigin = new Point(.5,.5), RenderTransform = new RotateTransform(element.Rotation) };
             border.MouseLeftButtonDown += ElementMouseDown;
             Canvas.SetLeft(border, element.X); Canvas.SetTop(border, element.Y); EditCanvas.Children.Add(border);
@@ -177,6 +179,7 @@ public partial class PdfEditorView : UserControl
     }
     double TextHeight(PdfEditElement element)
     {
+        if(element.PreserveSourceStyle)return element.FontSize*1.35*Math.Max(1,element.Text.Split('\n').Length)+2;
         var pad = element.Kind == "note" ? 7 : 1;
         var formatted = new FormattedText(element.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(element.FontFamily), element.FontSize, Brushes.Black, VisualTreeHelper.GetDpi(this).PixelsPerDip) { MaxTextWidth = Math.Max(1, element.Width-pad*2), LineHeight = element.FontSize*1.35 };
         return Math.Max(element.Kind == "note" ? 64 : 28, formatted.Height+pad*2+element.FontSize*.7);
@@ -207,12 +210,13 @@ public partial class PdfEditorView : UserControl
         }
         if (!selectedIds.Contains(item.Id)) { selectedIds.Clear(); selectedIds.Add(item.Id); }
         groupOrigins = Page!.Elements.Where(x=>selectedIds.Contains(x.Id)).ToDictionary(x=>x.Id,x=>new Point(x.X,x.Y));
+        if(e.ClickCount==2 && item.Kind=="replace" && item.SourceTextId!=null){SelectSourceText(item.SourceTextId);e.Handled=true;return;}
         if(e.ClickCount==2 && item.Kind is "text" or "note") {selectedId=item.Id;BeginAddedText();e.Handled=true;return;}
         selectedSource = null; selectedId = item.Id; dragging = item; dragVisual = border; dragBefore = Capture();
         dragStart = e.GetPosition(EditCanvas); dragX = item.X; dragY = item.Y;
         if (item.Kind != "stamp") {
             EditText.Text = item.Text;
-            SelectFont(item.FontSize,item.Color);
+            SelectFont(item.FontSize,item.Color);SelectOriginalFont(item.FontFamily);
         }
         EditCanvas.CaptureMouse(); border.BorderThickness = new Thickness(1); e.Handled = true;
     }
@@ -245,7 +249,7 @@ public partial class PdfEditorView : UserControl
     {
         if (selectedSource != null) { ReplaceSourceText(selectedSource.Id, EditText.Text); return; }
         if (Selected is not { Kind: "text" or "note" or "replace" } item || (Selected.Kind != "replace" && string.IsNullOrWhiteSpace(EditText.Text))) return;
-        var before = Capture(); item.Text = EditText.Text; item.FontSize = FontSizeValue; item.Color = ColorValue; item.FontFamily=((ComboBoxItem)TextFont.SelectedItem).Content.ToString()!;item.Alignment=new[]{"left","center","right"}[TextAlign.SelectedIndex]; item.Height = Math.Min(SizeOfPage().H-6, TextHeight(item));
+        var before = Capture(); item.Text = EditText.Text; item.FontSize = FontSizeValue; item.Color = ColorValue; var family=((ComboBoxItem)TextFont.SelectedItem).Content.ToString()!;if(family!=item.FontFamily)item.PreserveSourceStyle=false;item.FontFamily=family;item.Alignment=new[]{"left","center","right"}[TextAlign.SelectedIndex]; item.Height = Math.Min(SizeOfPage().H-6, TextHeight(item));
         try { Clamp(item); Commit(before); } catch (Exception ex) { Restore(before); EditStatus.Text = ex.Message; }
     }
     void ChooseStamp(object sender, RoutedEventArgs e)

@@ -40,7 +40,7 @@ if($CertificateThumbprint){
 $runtime=Join-Path $package 'runtime/python'
 New-Item -ItemType Directory -Force $runtime | Out-Null
 Copy-Item -Path (Join-Path $PythonRuntime '*') -Destination $runtime -Recurse -Force
-& (Join-Path $runtime 'python.exe') -c "import ezdxf, matplotlib, pypdf, win32com.client, pypdfium2, xlrd, reportlab; print('CAD and smart document runtime verified')"
+& (Join-Path $runtime 'python.exe') -c "import ezdxf, matplotlib, pypdf, win32com.client, pypdfium2, xlrd, reportlab, fontTools; print('CAD and smart document runtime verified')"
 if($LASTEXITCODE -ne 0){throw 'Incomplete Python runtime'}
 $notices=Join-Path $package 'notices'
 New-Item -ItemType Directory -Force $notices | Out-Null

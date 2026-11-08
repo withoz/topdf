@@ -6,7 +6,7 @@ namespace Topdf;
 
 public sealed record PdfEditPageInfo(int SourceIndex, double Width, double Height);
 public sealed record PdfEditInfo(string SourceSha256, PdfEditPageInfo[] Pages);
-public sealed record PdfSourceText(string Id, string Text, double X, double Y, double Width, double Height, double EditX, double EditY, double EditWidth, double EditHeight, double FontSize, string Color, int Rotation);
+public sealed record PdfSourceText(string Id, string Text, double X, double Y, double Width, double Height, double EditX, double EditY, double EditWidth, double EditHeight, double FontSize, string Color, int Rotation, double BaselineX=0, double BaselineY=0, string FontFamily="Malgun Gothic");
 public sealed class PdfEditElement
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -26,6 +26,7 @@ public sealed class PdfEditElement
     public string Alignment { get; set; } = "left";
     public string FontFamily { get; set; } = "Malgun Gothic";
     public List<double[]> Points { get; set; } = [];
+    public bool PreserveSourceStyle { get; set; }
     public string? SourceTextId { get; set; }
     public string? SourceText { get; set; }
 }
@@ -34,6 +35,7 @@ public sealed class PdfEditPage
     public int SourceIndex { get; set; }
     public int Rotation { get; set; }
     public List<PdfEditElement> Elements { get; set; } = [];
+    [System.Text.Json.Serialization.JsonIgnore] public int DisplayNumber {get;set;}
     public string Label => $"원본 {SourceIndex+1}쪽";
 }
 public sealed class PdfEditPlan
@@ -59,10 +61,10 @@ public static class PdfEditService
         await RunAsync(["text", source, output, "--page", page.ToString()], cancellation);
         return JsonSerializer.Deserialize<PdfSourceText[]>(await File.ReadAllTextAsync(output, cancellation), Json)!;
     }
-    public static async Task<string> RenderAsync(string source, string folder, int page, int rotation, CancellationToken cancellation, PdfEditPlan? plan = null)
+    public static async Task<string> RenderAsync(string source, string folder, int page, int rotation, CancellationToken cancellation, PdfEditPlan? plan = null, int maxSize=1800)
     {
         var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".png");
-        var arguments = new List<string> { "render", source, output, "--page", page.ToString(), "--rotation", rotation.ToString() };
+        var arguments = new List<string> { "render", source, output, "--page", page.ToString(), "--rotation", rotation.ToString(),"--max-size",maxSize.ToString() };
         if (plan != null) {
             var specification = Path.Combine(folder, Guid.NewGuid().ToString("N")+".json");
             await File.WriteAllTextAsync(specification, JsonSerializer.Serialize(plan, Json), cancellation);

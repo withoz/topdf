@@ -29,7 +29,7 @@ public partial class MainWindow
             if(!ReferenceEquals(pdfEditor,editor))return;var result=editor.ResultPath;EndPdfEditing();
             if(closed||result==null)return;await OpenFilesAsync([result]);Summary.Text="수정본을 새 탭으로 열었습니다. 원본은 보존했습니다.";
         };
-        editor.NavigateViewingPdf=NavigateUnifiedPreviewAsync;editor.ReadViewingPosition=ReadViewingPositionAsync;
+        editor.NavigateViewingPdf=NavigateUnifiedPreviewAsync;editor.ReadViewingPosition=ReadViewingPositionAsync;editor.ToggleNativePagePane=ToggleNativeContentsAsync;
         PreviewHost.Children.Remove(PdfViewer);editor.AttachNativeViewer(PdfViewer,source);
         LayoutRoot.Children.Remove(DocumentTabs);
         DocumentTabs.SetBinding(System.Windows.Controls.Primitives.Selector.SelectedItemProperty,new System.Windows.Data.Binding("SelectedItem") {Source=Files,Mode=System.Windows.Data.BindingMode.TwoWay});

@@ -38,9 +38,9 @@ internal static class ExportUiTest
                 if(!((FileJob)list.Items[0]).IsChecked || ((FileJob)list.Items[1]).IsChecked)throw new Exception("Row checkbox binding failed");
                 var count=(Button)window.FindName("SaveCheckedButton");
                 if(!count.Content.ToString()!.Contains("(1)"))throw new Exception("Selected count did not update");
-                Descendants(window).OfType<Button>().Single(b=>(string?)b.Content=="전체 선택").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Descendants(window).OfType<Button>().Single(b=>(b.Content as string)=="전체 선택").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 if(list.Items.Cast<FileJob>().Any(j=>!j.IsChecked))throw new Exception("Select all failed");
-                Descendants(window).OfType<Button>().Single(b=>(string?)b.Content=="선택 해제").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Descendants(window).OfType<Button>().Single(b=>(b.Content as string)=="선택 해제").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 if(list.Items.Cast<FileJob>().Any(j=>j.IsChecked))throw new Exception("Clear selection failed");
                 window.SetMenuOpen(false);
                 if(menu.IsOpen)throw new Exception("Menu close failed");

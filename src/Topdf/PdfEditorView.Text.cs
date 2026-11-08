@@ -19,6 +19,11 @@ public partial class PdfEditorView
         }
         return result;
     }
+    PdfSourceText EditingText(PdfSourceText source)
+    {
+        var item=DisplayText(source);var existing=Page?.Elements.FirstOrDefault(x=>x.SourceTextId==source.Id);
+        return existing==null?item:item with {EditX=existing.X,EditY=existing.Y,EditWidth=existing.Width,EditHeight=existing.Height,Rotation=existing.Rotation,FontSize=existing.FontSize,Color=existing.Color,FontFamily=existing.FontFamily};
+    }
     void DrawSourceTexts()
     {
         foreach(var original in SourceTextItems) {
@@ -32,11 +37,11 @@ public partial class PdfEditorView
             Canvas.SetLeft(box,item.X);Canvas.SetTop(box,item.Y);EditCanvas.Children.Add(box);
         }
         if(selectedSource==null) return;
-        var selected=DisplayText(selectedSource);
+        var selected=EditingText(selectedSource);
         inlineText=new TextBox { Text=EditText.Text,Width=selected.EditWidth,Height=selected.EditHeight,
-            FontFamily=new FontFamily("Malgun Gothic"),FontSize=selected.FontSize,TextWrapping=TextWrapping.Wrap,AcceptsReturn=true,
-            Foreground=(Brush)new BrushConverter().ConvertFromString(selected.Color)!,Padding=new Thickness(1),
-            BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(1),Background=Brushes.White,
+            FontFamily=OriginalFont(selected.FontFamily),FontSize=selected.FontSize,TextWrapping=TextWrapping.Wrap,AcceptsReturn=true,
+            Foreground=Brushes.Transparent,CaretBrush=(Brush)new BrushConverter().ConvertFromString(selected.Color)!,SelectionBrush=Brushes.LightSkyBlue,SelectionOpacity=.35,SelectionTextBrush=Brushes.Transparent,Padding=new Thickness(0),
+            BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(0),Background=Brushes.Transparent,
             RenderTransformOrigin=new Point(.5,.5),RenderTransform=new RotateTransform(selected.Rotation) };
         void ResizeInput() {
             if(inlineText==null) return;
@@ -45,7 +50,7 @@ public partial class PdfEditorView
             Canvas.SetLeft(inlineText,layout.X);Canvas.SetTop(inlineText,layout.Y);
         }
         ResizeInput();
-        inlineText.TextChanged+=(_,_)=> { if(inlineText!=null) { EditText.Text=inlineText.Text;ResizeInput(); } };
+        inlineText.TextChanged+=(_,_)=> { if(inlineText!=null) { EditText.Text=inlineText.Text;ResizeInput();QueueInlinePreview(); } };
         inlineText.PreviewKeyDown+=(_,e)=> {
             if(e.Key==Key.Enter && Keyboard.Modifiers!=ModifierKeys.Shift) { ApplyInlineText();e.Handled=true; }
             else if(e.Key==Key.Escape) { selectedSource=null;DrawElements();e.Handled=true; }
@@ -68,7 +73,8 @@ public partial class PdfEditorView
         EnterEditing();
         ApplyInlineText();
         selectedIds.Clear(); selectedSource=SourceTextItems.Single(t=>t.Id==id);selectedId="";
-        EditText.Text=selectedSource.Text;SelectFont(selectedSource.FontSize,selectedSource.Color);
+        var current=EditingText(selectedSource);
+        EditText.Text=Page!.Elements.FirstOrDefault(x=>x.SourceTextId==id)?.Text??selectedSource.Text;SelectFont(current.FontSize,current.Color);SelectOriginalFont(current.FontFamily);
         DrawElements();inlineText?.Focus();inlineText?.SelectAll();
         EditStatus.Text="본문을 직접 입력한 뒤 Enter로 적용하세요. Esc는 선택 취소입니다.";
     }
@@ -77,23 +83,23 @@ public partial class PdfEditorView
         addedTextCommit?.Invoke();
         if(selectedSource==null || inlineText==null || selectingText || saving) return;
         var text=inlineText.Text;var original=selectedSource;
-        if(text==original.Text) return;
+        if(text==(Page?.Elements.FirstOrDefault(x=>x.SourceTextId==original.Id)?.Text??original.Text)) return;
         inlineText=null;ReplaceSourceText(original.Id,text);
     }
     public void ReplaceSourceText(string id,string text)
     {
         if(Page==null || info==null || saving) return;
         if(text.Length>5000) {EditStatus.Text="본문은 5000자까지 수정할 수 있습니다.";return;}
-        var original=SourceTextItems.Single(t=>t.Id==id);var item=DisplayText(original);
+        var original=SourceTextItems.Single(t=>t.Id==id);var item=EditingText(original);
         var element=ReplacementLayout(item,text,FontSizeValue,ColorValue);
-        element.Kind="replace";element.SourceTextId=id;element.SourceText=original.Text;
+        element.Kind="replace";element.PreserveSourceStyle=true;var family=((ComboBoxItem)TextFont.SelectedItem).Content.ToString()!;if(family!=item.FontFamily){element.FontFamily=family;element.PreserveSourceStyle=false;}element.SourceTextId=id;element.SourceText=original.Text;
         try { Clamp(element); } catch(Exception ex) {EditStatus.Text=ex.Message;return;}
         var before=Capture();Page.Elements.RemoveAll(e=>e.SourceTextId==id);Page.Elements.Add(element);
         selectedSource=null;selectedId=element.Id;Commit(before);_ = RenderPageAsync();
     }
     PdfEditElement ReplacementLayout(PdfSourceText item,string text,double fontSize,string color)
     {
-        var element=new PdfEditElement { Text=text,X=item.EditX,Y=item.EditY,Width=item.EditWidth,Height=item.EditHeight,Rotation=item.Rotation,FontSize=fontSize,Color=color };
+        var element=new PdfEditElement { Text=text,X=item.EditX,Y=item.EditY,Width=item.EditWidth,Height=item.EditHeight,Rotation=item.Rotation,FontSize=fontSize,Color=color,FontFamily=item.FontFamily,PreserveSourceStyle=true };
         var radians=item.Rotation*Math.PI/180;var dx=Math.Cos(radians);var dy=Math.Sin(radians);
         var px=-dy;var py=dx;
         var anchor=new Point(item.EditX+item.EditWidth/2-dx*item.EditWidth/2-px*item.EditHeight/2,
@@ -107,7 +113,7 @@ public partial class PdfEditorView
             var left=projections.Min(p=>p.X);
             if(left>item.EditWidth && projections.Min(p=>p.Y)<item.EditHeight && projections.Max(p=>p.Y)>0)maximum=Math.Min(maximum,left-2);
         }
-        var formatted=new FormattedText(text,System.Globalization.CultureInfo.CurrentCulture,FlowDirection.LeftToRight,new Typeface("Malgun Gothic"),fontSize,Brushes.Black,VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        var formatted=new FormattedText(text,System.Globalization.CultureInfo.CurrentCulture,FlowDirection.LeftToRight,new Typeface(OriginalFont(item.FontFamily),FontStyles.Normal,FontWeights.Normal,FontStretches.Normal),fontSize,Brushes.Black,VisualTreeHelper.GetDpi(this).PixelsPerDip);
         var width=Math.Max(item.EditWidth,Math.Min(formatted.WidthIncludingTrailingWhitespace+8,maximum-2));
         element.Width=width;var height=Math.Max(item.EditHeight,TextHeight(element));
         var dw=width-item.EditWidth;var dh=height-item.EditHeight;

@@ -15,6 +15,11 @@ public partial class MainWindow
         try{return await positionRead.WaitAsync(TimeSpan.FromSeconds(2));}
         catch(Exception){return null;} // A runtime without PDF accessibility keeps the last editor page.
     }
+    async Task ToggleNativeContentsAsync()
+    {
+        var handle=new WindowInteropHelper(this).Handle;
+        try {await Task.Run(()=>{var root=AutomationElement.FromHandle(handle);if(root.Current.ProcessId!=Environment.ProcessId)return;var viewer=root.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,"PdfViewer"));var button=viewer?.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,"contents"));if(button!=null&&button.TryGetCurrentPattern(InvokePattern.Pattern,out var invoke))((InvokePattern)invoke).Invoke();}).WaitAsync(TimeSpan.FromSeconds(2));}catch(Exception){}
+    }
     static PdfViewingPosition? ReadOwnPdfPosition(IntPtr handle,double dpi)
     {
         // Read only this window's embedded PDF control. Never inspect another application.
