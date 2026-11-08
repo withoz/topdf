@@ -63,6 +63,18 @@ def hwp_to_pdf(source, target):
         pythoncom.CoUninitialize()
 
 
+def dwg_output_version(source):
+    # Match the input generation. Up-converting legacy block ownership to a
+    # newer DXF generation can make LibreDWG emit an empty ENTITIES section
+    # while returning exit code 0. Do not silently downgrade newer drawings.
+    with source.open('rb') as stream:
+        signature = stream.read(6).decode('ascii', errors='replace')
+    versions = {'AC1009': 'r12', 'AC1012': 'r14', 'AC1014': 'r14',
+                'AC1015': 'r2000', 'AC1018': 'r2004', 'AC1021': 'r2007',
+                'AC1024': 'r2010', 'AC1027': 'r2013', 'AC1032': 'r2018'}
+    return signature, versions.get(signature, 'r2018')
+
+
 def cad_to_pdf(source, target, oda='', libredwg=''):
     import ezdxf
     from ezdxf.addons.drawing import Frontend, RenderContext
@@ -74,6 +86,7 @@ def cad_to_pdf(source, target, oda='', libredwg=''):
     from matplotlib.backends.backend_pdf import PdfPages
 
     dxf = source
+    dwg_signature = dxf_version = None
     if source.suffix.lower() == '.dwg':
         staging = target.parent / 'cad-input'
         converted = target.parent / 'cad-dxf'
@@ -81,13 +94,18 @@ def cad_to_pdf(source, target, oda='', libredwg=''):
         shutil.copy2(source, staging / source.name)
         dxf = converted / (source.stem + '.dxf')
         if libredwg and Path(libredwg).is_file():
-            command = [libredwg, '-y', '--as', 'r2018', '-o', str(dxf), str(staging / source.name)]
+            dwg_signature, dxf_version = dwg_output_version(source)
+            command = [libredwg, '-y', '--as', dxf_version, '-o', str(dxf), str(staging / source.name)]
         elif oda and Path(oda).is_file():
             command = [oda, str(staging), str(converted), 'ACAD2018', 'DXF', '0', '0', '*.dwg']
         else:
             raise RuntimeError('DWG 변환 엔진 파일을 찾을 수 없습니다.')
         process = subprocess.run(command, capture_output=True, timeout=90, creationflags=subprocess.CREATE_NO_WINDOW)
         (target.parent/'dwg-converter.log').write_bytes(process.stdout+b'\n'+process.stderr)
+        (target.parent/'dwg-converter.json').write_text(json.dumps({
+            'sourceSignature': dwg_signature, 'dxfTargetVersion': dxf_version,
+            'exitCode': process.returncode,
+        }, ensure_ascii=False, indent=2), encoding='utf-8')
         if process.returncode != 0 or not dxf.is_file():
             raise RuntimeError('DWG→DXF 변환에 실패했습니다.')
     doc = ezdxf.readfile(dxf)
@@ -114,6 +132,9 @@ def cad_to_pdf(source, target, oda='', libredwg=''):
             substitutions.append({'style': style.dxf.name, 'requested': requested, 'used': fallback.filename})
     # Model plus non-empty paper layouts; no silently omitted non-empty layouts.
     layouts = [doc.modelspace()] + [l for l in doc.layouts if l.name != 'Model' and len(l) > 0]
+    if not any(len(layout) for layout in layouts):
+        detail = f' ({dwg_signature} → {dxf_version})' if dwg_signature else ''
+        raise RuntimeError(f'CAD 변환 결과에 출력할 도면 객체가 없습니다{detail}. 빈 도면으로 변환된 경우이므로 원본 확인 또는 호환 모드 변환이 필요합니다.')
     config = Configuration(color_policy=ColorPolicy.BLACK, background_policy=BackgroundPolicy.WHITE)
     with PdfPages(target) as output:
         for drawing in layouts:
@@ -136,6 +157,9 @@ def cad_to_pdf(source, target, oda='', libredwg=''):
         'limitations': 'Not a scale-certified CAD plot. SHX/CTB/STB, proxy objects, XREF and 3D require review.',
         'replacementCharactersInSourceText': text_errors(doc),
         'fontSubstitutions': substitutions,
+        'sourceDwgSignature': dwg_signature,
+        'dxfTargetVersion': dxf_version,
+        'layoutEntityCounts': {layout.name: len(layout) for layout in layouts if len(layout)},
     }, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
@@ -150,12 +174,16 @@ def main():
     if source == target:
         raise ValueError('원본에 덮어쓸 수 없습니다.')
     target.parent.mkdir(parents=True, exist_ok=True)
-    if source.suffix.lower() in ('.hwp', '.hwpx'):
-        hwp_to_pdf(source, target)
-    elif source.suffix.lower() in ('.dwg', '.dxf'):
-        cad_to_pdf(source, target, args.oda, args.libredwg)
-    else:
-        raise ValueError('지원하지 않는 worker 입력 형식')
+    try:
+        if source.suffix.lower() in ('.hwp', '.hwpx'):
+            hwp_to_pdf(source, target)
+        elif source.suffix.lower() in ('.dwg', '.dxf'):
+            cad_to_pdf(source, target, args.oda, args.libredwg)
+        else:
+            raise ValueError('지원하지 않는 worker 입력 형식')
+    except Exception as error:
+        Path(str(target)+'.error.txt').write_text(str(error), encoding='utf-8')
+        raise
     if not target.is_file() or not target.read_bytes().startswith(b'%PDF-'):
         raise RuntimeError('유효한 PDF가 생성되지 않았습니다.')
 
