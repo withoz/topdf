@@ -19,6 +19,7 @@ internal static class DrawingUiTest
                 await window.Ready.WaitAsync(TimeSpan.FromSeconds(90));var view=window.View;
                 var original=SHA256.HashData(File.ReadAllBytes(input));
                 var tool=(ComboBox)view.FindName("EditTool");
+                var ribbon=(StackPanel)view.FindName("EditorRibbon");Check(ribbon.Children.OfType<RadioButton>().Count()==13,"Thirteen ribbon icons");
                 var names=new[]{"선","화살표","사각형","타원","형광펜","밑줄","취소선","자유곡선"};
                 for(int n=0;n<names.Length;n++){
                     tool.SelectedItem=tool.Items.Cast<ComboBoxItem>().Single(x=>(string)x.Content==names[n]);
@@ -26,6 +27,15 @@ internal static class DrawingUiTest
                     Call(view,"UpdateGraphic",new Point(130,90+n*65));Call(view,"UpdateGraphic",new Point(240,115+n*65));Call(view,"EndGraphic");
                 }
                 Check(view.CurrentPlan.Pages[0].Elements.Count==8,"All drawing tools");
+                Check(ribbon.Children.OfType<RadioButton>().Single(x=>x.IsChecked==true).Tag.ToString()=="12","Ribbon selection follows tool");
+                var palette=(System.Windows.Controls.Primitives.UniformGrid)view.FindName("PenPalette");Check(palette.Children.Count==30,"Palette colors");
+                palette.Children.OfType<RadioButton>().Single(x=>(string)x.Tag=="#1755B5").IsChecked=true;((Slider)view.FindName("PenWidthSlider")).Value=3.5;
+                Check(view.CurrentPlan.Pages[0].Elements.Last().Color=="#1755B5" && view.CurrentPlan.Pages[0].Elements.Last().StrokeWidth==3.5,"Palette style applied");
+                ((System.Windows.Controls.Primitives.ToggleButton)view.FindName("PenOptions")).IsChecked=true;await Task.Delay(100);
+                var popup=(System.Windows.Controls.Primitives.Popup)view.FindName("PenPopup");var popupBody=(FrameworkElement)popup.Child;popupBody.UpdateLayout();
+                var paletteBitmap=new RenderTargetBitmap((int)popupBody.ActualWidth,(int)popupBody.ActualHeight,96,96,PixelFormats.Pbgra32);paletteBitmap.Render(popupBody);
+                var paletteEncoder=new PngBitmapEncoder();paletteEncoder.Frames.Add(BitmapFrame.Create(paletteBitmap));Directory.CreateDirectory("artifacts/drawing-test");using(var file=File.Create("artifacts/drawing-test/palette.png"))paletteEncoder.Save(file);
+                ((System.Windows.Controls.Primitives.ToggleButton)view.FindName("PenOptions")).IsChecked=false;
                 Check(view.CurrentPlan.Pages[0].Elements.All(x=>x.Points.All(p=>p.All(v=>v>=0&&v<=1))),"Normalized points");
                 view.AddText(280,220,"직접 수정 · 가운데 정렬");
                 ((ComboBox)view.FindName("TextFont")).SelectedIndex=2;((ComboBox)view.FindName("TextAlign")).SelectedIndex=1;

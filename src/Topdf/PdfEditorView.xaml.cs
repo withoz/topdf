@@ -50,7 +50,7 @@ public partial class PdfEditorView : UserControl
 
     public PdfEditorView(string pdf, string? displayName = null)
     {
-        InitializeComponent(); input = Path.GetFullPath(pdf);
+        InitializeComponent(); InitializeRibbon(); input = Path.GetFullPath(pdf);
         suggestedName = Path.GetFileNameWithoutExtension(displayName ?? input) + "_수정.pdf";
 
         EnableEditing(false);
@@ -86,7 +86,7 @@ public partial class PdfEditorView : UserControl
         else EditStatus.Text = $"1~{plan.Pages.Count} 사이의 페이지 번호를 입력하세요.";
     }
     void PageNumberKey(object sender, KeyEventArgs e) { if(e.Key==Key.Enter) {GoToPage(sender,e);e.Handled=true;} }
-    void EnableEditing(bool enabled) { EditorTools.IsEnabled = enabled; EditorHistory.IsEnabled = enabled; EditorSave.IsEnabled = enabled; EditPages.IsEnabled = enabled; EditCanvas.IsEnabled = enabled; }
+    void EnableEditing(bool enabled) { EditorRibbon.IsEnabled=enabled; EditorTools.IsEnabled = enabled; EditorHistory.IsEnabled = enabled; EditorSave.IsEnabled = enabled; EditPages.IsEnabled = enabled; EditCanvas.IsEnabled = enabled; }
     (double W, double H) SizeOfPage()
     {
         var data = info!.Pages[Page!.SourceIndex];
