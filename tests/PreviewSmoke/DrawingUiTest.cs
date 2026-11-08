@@ -19,7 +19,7 @@ internal static class DrawingUiTest
                 await window.Ready.WaitAsync(TimeSpan.FromSeconds(90));var view=window.View;
                 var original=SHA256.HashData(File.ReadAllBytes(input));
                 var tool=(ComboBox)view.FindName("EditTool");
-                var ribbon=(StackPanel)view.FindName("EditorRibbon");Check(ribbon.Children.OfType<RadioButton>().Count()==13,"Thirteen ribbon icons");
+                var ribbon=(StackPanel)view.FindName("EditorRibbon");Check(view.RibbonButtons.Count(x=>x.Tag.ToString()!="-1")==13,"Thirteen ribbon icons");
                 var names=new[]{"선","화살표","사각형","타원","형광펜","밑줄","취소선","자유곡선"};
                 for(int n=0;n<names.Length;n++){
                     tool.SelectedItem=tool.Items.Cast<ComboBoxItem>().Single(x=>(string)x.Content==names[n]);
@@ -27,7 +27,7 @@ internal static class DrawingUiTest
                     Call(view,"UpdateGraphic",new Point(130,90+n*65));Call(view,"UpdateGraphic",new Point(240,115+n*65));Call(view,"EndGraphic");
                 }
                 Check(view.CurrentPlan.Pages[0].Elements.Count==8,"All drawing tools");
-                Check(ribbon.Children.OfType<RadioButton>().Single(x=>x.IsChecked==true).Tag.ToString()=="12","Ribbon selection follows tool");
+                Check(view.RibbonButtons.Single(x=>x.IsChecked==true).Tag.ToString()=="12","Ribbon selection follows tool");
                 var palette=(System.Windows.Controls.Primitives.UniformGrid)view.FindName("PenPalette");Check(palette.Children.Count==30,"Palette colors");
                 palette.Children.OfType<RadioButton>().Single(x=>(string)x.Tag=="#1755B5").IsChecked=true;((Slider)view.FindName("PenWidthSlider")).Value=3.5;
                 Check(view.CurrentPlan.Pages[0].Elements.Last().Color=="#1755B5" && view.CurrentPlan.Pages[0].Elements.Last().StrokeWidth==3.5,"Palette style applied");

@@ -63,7 +63,7 @@ public partial class MainWindow : Window
     void CloseMenu(object sender, RoutedEventArgs e) => SetMenuOpen(false);
     void HandleShortcuts(object sender, KeyEventArgs e)
     {
-        if (pdfEditor != null && e.Key != Key.F11) return;
+        if(pdfEditor!=null && e.Key!=Key.F11 && !(e.Key==Key.M && Keyboard.Modifiers==ModifierKeys.Control))return;
         if (e.Key == Key.F11) { ToggleFullscreen(sender, e); e.Handled = true; }
         else if (e.Key == Key.M && Keyboard.Modifiers == ModifierKeys.Control) { SetMenuOpen(MenuToggle.IsChecked != true); e.Handled = true; }
         else if (e.Key == Key.Escape) {
@@ -109,7 +109,7 @@ public partial class MainWindow : Window
         var project=paths.FirstOrDefault(p=>Path.GetExtension(p).Equals(".topdf",StringComparison.OrdinalIgnoreCase));
         var documents=paths.Where(p=>!Path.GetExtension(p).Equals(".topdf",StringComparison.OrdinalIgnoreCase)).ToArray();
         if(documents.Length>0) Add(documents);
-        if(project!=null){await StartPdfEditorAsync(project,Path.GetFileName(project));return;}
+        if(project!=null){Add([project]);var projectJob=jobs.First(j=>j.Source.Equals(project,StringComparison.OrdinalIgnoreCase));projectJob.Status="편집";Files.SelectedItem=projectJob;await ShowPreviewAsync(projectJob);if(pdfEditor!=null){try{await pdfEditor.Ready;while(pdfEditor?.IsBusy==true)await Task.Delay(20,lifetime.Token);}catch(Exception ex){Summary.Text=ex.Message;}}return;}
         Files.SelectedItem = jobs.First(j => j.Source.Equals(paths[0], StringComparison.OrdinalIgnoreCase));
         await ConvertPendingAsync();
         await Task.WhenAll(jobs.Where(j => j.Pdf != null).Select(InspectAsync).ToArray());
@@ -118,6 +118,7 @@ public partial class MainWindow : Window
     {
         if (sender is not FrameworkElement { DataContext: FileJob job }) return;
         if (job.Status == "변환 중") { Summary.Text = "변환 취소 후 탭을 닫아 주세요."; return; }
+        if(ReferenceEquals(job,editorJob)){if(pdfEditor!=null&&!pdfEditor.CanClose())return;EndPdfEditing();}
         var index = jobs.IndexOf(job);
         var selected = ReferenceEquals(Files.SelectedItem, job);
         jobs.Remove(job);
@@ -193,7 +194,7 @@ public partial class MainWindow : Window
 
     async Task InitializeViewerAsync()
     {
-        var environment = await CoreWebView2Environment.CreateAsync(null, AppPaths.Viewer);
+        var environment = await CoreWebView2Environment.CreateAsync(null, AppPaths.Viewer,new CoreWebView2EnvironmentOptions {AdditionalBrowserArguments="--force-renderer-accessibility"});
         if (closed) return;
         await PdfViewer.EnsureCoreWebView2Async(environment);
         if (closed) return;
@@ -219,8 +220,11 @@ public partial class MainWindow : Window
 
     async Task ShowPreviewAsync(FileJob? job)
     {
-        if (pdfEditor != null) return;
+        var documentPath=EditorPath(job);
+        if(pdfEditor!=null && ReferenceEquals(job,editorJob) && string.Equals(documentPath,editorSource,StringComparison.OrdinalIgnoreCase))return;
+        if(!CanChangeDocument(job))return;
         var version = ++previewVersion;
+        if(job!=null && Path.GetExtension(job.Source).Equals(".topdf",StringComparison.OrdinalIgnoreCase)){PreviewTitle.Text=job.Name;await StartPdfEditorAsync(job.Source,job.Name);return;}
         PreviewTitle.Text = job == null ? "PDF 미리보기" : job.Name;
         if (job?.Pdf == null) {
             PreviewNotice(job == null ? "PDF 또는 변환이 완료된 파일을 선택하세요." : job.Status == "미지원" ? "이 형식은 아직 변환 엔진이 연결되지 않았습니다." : job.Status == "호환 필요" ? "독립 변환 품질 검증을 통과하지 못한 형식입니다. 설치형 호환 모드에서 기존 엔진을 사용할 수 있습니다." : job.Status == "실패" ? "변환에 실패했습니다. " + job.Detail : "변환이 완료되면 여기에 PDF가 표시됩니다.");
@@ -238,6 +242,7 @@ public partial class MainWindow : Window
             PreviewMessage.Visibility = Visibility.Collapsed;
             EmptyPreview.Visibility = Visibility.Collapsed;
             PdfViewer.Visibility = Visibility.Visible;
+            await StartPdfEditorAsync(path,job.Name);
         }
         catch (Exception ex) {
             if (closed || version != previewVersion || pdfEditor != null) return;
@@ -247,10 +252,10 @@ public partial class MainWindow : Window
                 : "미리보기를 열 수 없습니다. " + ex.Message);
         }
     }
-    void OpenPdf(object sender, RoutedEventArgs e)
+    async void OpenPdf(object sender, RoutedEventArgs e)
     {
         if (Files.SelectedItem is not FileJob { Pdf: { } pdf }) { Summary.Text = "변환이 완료된 파일을 선택해 주세요."; return; }
-        try { Process.Start(new ProcessStartInfo(pdf) { UseShellExecute = true }); } catch (Exception ex) { Summary.Text = ex.Message; }
+        try { if(pdfEditor?.HasPlanChanges==true)pdf=await pdfEditor.GetViewingPdfAsync();Process.Start(new ProcessStartInfo(pdf) { UseShellExecute = true }); } catch (Exception ex) { Summary.Text = ex.Message; }
     }
     void UpdateCheckedCount() => SaveCheckedButton.Content = $"선택 저장 ({jobs.Count(j => j.IsChecked)})";
     void CheckAll(object sender, RoutedEventArgs e) { foreach (var job in jobs) job.IsChecked = true; }
@@ -265,6 +270,9 @@ public partial class MainWindow : Window
         exporting = true;
         SaveCheckedButton.IsEnabled = false;
         try {
+            if(pdfEditor!=null && editorJob?.IsChecked==true && pdfEditor.HasPlanChanges) {
+                var current=await pdfEditor.GetViewingPdfAsync();selected=selected.Select(x=>x.Source==editorJob.Source?x with {Pdf=current}:x).ToArray();
+            }
             var result = await Task.Run(() => PdfExportService.Export(selected, dialog.FolderName));
             Summary.Text = $"PDF {result.Saved.Count}개 저장 완료 · 변환 전 {result.Skipped.Count}개 제외 · 실패 {result.Errors.Count}개\n{dialog.FolderName}";
             if (result.Errors.Count > 0) MessageBox.Show(this, string.Join(Environment.NewLine, result.Errors), "일부 PDF 저장 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -274,6 +282,7 @@ public partial class MainWindow : Window
     }
     void SavePdf(object sender, RoutedEventArgs e)
     {
+        if(pdfEditor!=null && pdfEditor.HasPlanChanges){pdfEditor.RequestPdfSave();return;}
         if (Files.SelectedItem is not FileJob { Pdf: { } pdf } job) { Summary.Text = "변환이 완료된 파일을 선택해 주세요."; return; }
         var dialog = new SaveFileDialog { Filter = "PDF|*.pdf", FileName = Path.GetFileNameWithoutExtension(job.Source) + ".pdf" };
         if (dialog.ShowDialog() != true) return;

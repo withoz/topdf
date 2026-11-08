@@ -46,7 +46,7 @@ internal static class PdfEditUiTest
         };
         app.Run(); return result;
     }
-    static void Click(DependencyObject root,string label) => Descendants(root).OfType<Button>().Single(b=>(string?)b.Content==label).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    static void Click(DependencyObject root,string label) => Descendants(((PdfEditorWindow)root).View.FindName("EditorHistory") as DependencyObject ?? root).OfType<Button>().Single(b=>(string?)b.Content==label).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     static IEnumerable<DependencyObject> Descendants(DependencyObject root) {
         for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++) { var child=VisualTreeHelper.GetChild(root,i); yield return child; foreach(var nested in Descendants(child)) yield return nested; }
     }

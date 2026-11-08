@@ -79,14 +79,14 @@ public partial class PdfEditorView : UserControl
         } catch (OperationCanceledException) { ready.TrySetCanceled(); }
         catch (Exception ex) { EditStatus.Text = ex.Message; ready.TrySetException(ex); }
     }
-    void GoToPage(object sender, RoutedEventArgs e) {
+    async void GoToPage(object sender, RoutedEventArgs e) {
         if (saving || info == null) return;
         ApplyInlineText();
-        if (int.TryParse(EditPageNumber.Text,out var number) && number>=1 && number<=plan.Pages.Count) { EditPages.SelectedIndex=number-1;EditPages.ScrollIntoView(EditPages.SelectedItem); }
+        if (int.TryParse(EditPageNumber.Text,out var number) && number>=1 && number<=plan.Pages.Count) { EditPages.SelectedIndex=number-1;EditPages.ScrollIntoView(EditPages.SelectedItem); if(IsViewing)await ReturnToViewingAsync(true); }
         else EditStatus.Text = $"1~{plan.Pages.Count} 사이의 페이지 번호를 입력하세요.";
     }
     void PageNumberKey(object sender, KeyEventArgs e) { if(e.Key==Key.Enter) {GoToPage(sender,e);e.Handled=true;} }
-    void EnableEditing(bool enabled) { EditorRibbon.IsEnabled=enabled; EditorTools.IsEnabled = enabled; EditorHistory.IsEnabled = enabled; EditorSave.IsEnabled = enabled; EditPages.IsEnabled = enabled; EditCanvas.IsEnabled = enabled; }
+    void EnableEditing(bool enabled) { EditorRibbon.IsEnabled=enabled;MoreOptions.IsEnabled=enabled;TextTools.IsEnabled=DrawingTools.IsEnabled=MarkupTools.IsEnabled=enabled; EditorTools.IsEnabled = enabled; EditorHistory.IsEnabled = enabled; EditorSave.IsEnabled = enabled; EditPages.IsEnabled = enabled; EditCanvas.IsEnabled = enabled; }
     (double W, double H) SizeOfPage()
     {
         var data = info!.Pages[Page!.SourceIndex];
@@ -139,7 +139,7 @@ public partial class PdfEditorView : UserControl
         return image;
     }
     History Capture() => new(PdfEditService.Clone(plan), EditPages.SelectedIndex, selectedId, selectedIds.ToArray());
-    void Commit(History previous) { undo.Push(previous); if(undo.Count>100){var recent=undo.Take(100).Reverse().ToArray();undo.Clear();foreach(var entry in recent)undo.Push(entry);} redo.Clear(); dirty = true; DrawElements(); }
+    void Commit(History previous) { EnterEditing(); undo.Push(previous); if(undo.Count>100){var recent=undo.Take(100).Reverse().ToArray();undo.Clear();foreach(var entry in recent)undo.Push(entry);} redo.Clear(); dirty = true; DrawElements(); }
     void DrawElements()
     {
         selectingText = true; EditCanvas.Children.Clear(); inlineText = null; selectingText = false; if (Page == null) return;
@@ -155,6 +155,7 @@ public partial class PdfEditorView : UserControl
             Canvas.SetLeft(border, element.X); Canvas.SetTop(border, element.Y); EditCanvas.Children.Add(border);
         }
         DrawResizeHandle();
+        if(!IsViewing)TextProperties.Visibility=selectedSource!=null || Selected?.Kind is "text" or "note" or "replace" || EditTool.SelectedIndex is 0 or 2 or 3 ? Visibility.Visible : Visibility.Collapsed;
     }
     void Clamp(PdfEditElement element)
     {
@@ -299,14 +300,15 @@ public partial class PdfEditorView : UserControl
     void MovePageUp(object sender, RoutedEventArgs e) => MovePage(-1);
     void MovePageDown(object sender, RoutedEventArgs e) => MovePage(1);
     void Restore(History history) { selectedIds.Clear(); selectedIds.UnionWith(history.Selection); selectedSource = null; plan = PdfEditService.Clone(history.Plan); selectedId = history.Selected; BindPages(history.Page); _ = RenderPageAsync(); }
-    public void Undo() { EndGraphic(); FinishObjectDrag(); if (undo.Count == 0) return; redo.Push(Capture()); Restore(undo.Pop()); dirty = !IsClean(); }
-    public void Redo() { if (redo.Count == 0) return; undo.Push(Capture()); Restore(redo.Pop()); dirty = !IsClean(); }
+    public void Undo() { EnterEditing(); EndGraphic(); FinishObjectDrag(); if (undo.Count == 0) return; redo.Push(Capture()); Restore(undo.Pop()); dirty = !IsClean(); }
+    public void Redo() { EnterEditing(); if (redo.Count == 0) return; undo.Push(Capture()); Restore(redo.Pop()); dirty = !IsClean(); }
     void UndoEdit(object sender, RoutedEventArgs e) => Undo();
     void RedoEdit(object sender, RoutedEventArgs e) => Redo();
     void ZoomChanged(object sender, SelectionChangedEventArgs e) { if (EditSurface != null) ApplyZoom(); }
     void ApplyZoom() { var text = ((ComboBoxItem)EditZoom.SelectedItem).Content.ToString()!.TrimEnd('%'); var zoom = double.Parse(text, CultureInfo.InvariantCulture)/100; EditSurface.LayoutTransform = new ScaleTransform(zoom,zoom); }
-    void EditorShortcuts(object sender, KeyEventArgs e)
+    async void EditorShortcuts(object sender, KeyEventArgs e)
     {
+        if(e.Key==Key.Escape && NativeViewingHost.Content!=null){e.Handled=true;await ReturnToViewingAsync();return;}
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.S) { SaveEditedPdf(sender, e); e.Handled = true; }
         else if (Keyboard.FocusedElement is not TextBox) {
             if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.A) { selectedIds.UnionWith(Page!.Elements.Select(x=>x.Id)); DrawElements(); e.Handled=true; }
@@ -344,7 +346,7 @@ public partial class PdfEditorView : UserControl
     void CheckClosing(object? sender, CancelEventArgs e)
     {
         ApplyInlineText();
-        if (saving) { e.Cancel = true; EditStatus.Text = "저장이 끝난 뒤 창을 닫아 주세요."; return; }
+        if (saving || changingView) { e.Cancel = true; EditStatus.Text = "저장이 끝난 뒤 창을 닫아 주세요."; return; }
         if (!dirty) return;
         var choice = MessageBox.Show(DialogOwner, "수정 내용을 새 PDF로 저장할까요?", "PDF 수정", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         if (choice == MessageBoxResult.No) { dirty = false; return; }

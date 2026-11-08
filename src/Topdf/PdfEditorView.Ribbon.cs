@@ -22,16 +22,22 @@ public partial class PdfEditorView
         StrokeSize.SelectionChanged+=(_,_)=>{if(double.TryParse((StrokeSize.SelectedItem as ComboBoxItem)?.Content.ToString(),NumberStyles.Float,CultureInfo.InvariantCulture,out var width))PenWidthSlider.Value=Math.Clamp(width,1,8);};
         ribbonReady=true;RefreshPenColor();RibbonSelectionChanged(this,new SelectionChangedEventArgs(SelectorEvent,Array.Empty<object>(),Array.Empty<object>()));
     }
+    public IReadOnlyList<RadioButton> RibbonButtons => (EditorRibbon?.Children.OfType<RadioButton>() ?? []).Concat(TextTools?.Children.OfType<RadioButton>() ?? []).Concat(DrawingTools?.Children.OfType<RadioButton>() ?? []).Concat(MarkupTools?.Children.OfType<RadioButton>() ?? []).ToArray();
     static readonly RoutedEvent SelectorEvent=System.Windows.Controls.Primitives.Selector.SelectionChangedEvent;
     void RibbonToolChecked(object sender,RoutedEventArgs e)
     {
-        if(EditTool==null || sender is not RadioButton {Tag:string tag} || !int.TryParse(tag,out var index))return;
+        if(EditTool==null || sender is not RadioButton {Tag:string tag} || !int.TryParse(tag,out var index) || index<0)return;
         ApplyInlineText();EditTool.SelectedIndex=index;
     }
     void RibbonSelectionChanged(object sender,SelectionChangedEventArgs e)
     {
         if(EditorRibbon==null || EditTool==null)return;
-        foreach(var tool in EditorRibbon.Children.OfType<RadioButton>())tool.IsChecked=int.TryParse(tool.Tag?.ToString(),out var index)&&index==EditTool.SelectedIndex;
+        foreach(var tool in RibbonButtons)tool.IsChecked=int.TryParse(tool.Tag?.ToString(),out var index)&&index==(IsViewing ? -1 : EditTool.SelectedIndex);
+        if(TextProperties!=null)TextProperties.Visibility=!IsViewing && EditTool.SelectedIndex is 0 or 2 or 3 ? Visibility.Visible : Visibility.Collapsed;
+        var active=new SolidColorBrush(Color.FromRgb(221,239,250));
+        if(TextToolsButton!=null)TextToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 0 or 2 ? active : Brushes.White;
+        if(DrawingToolsButton!=null)DrawingToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 5 or 6 or 7 or 8 or 12 ? active : Brushes.White;
+        if(MarkupToolsButton!=null)MarkupToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 3 or 9 or 10 or 11 ? active : Brushes.White;
     }
     bool syncingPalette;
     void RefreshPenColor()

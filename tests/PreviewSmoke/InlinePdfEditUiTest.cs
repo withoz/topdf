@@ -18,13 +18,17 @@ internal static class InlinePdfEditUiTest
             try {
                 var source=Path.GetFullPath(path);var hash=SHA256.HashData(File.ReadAllBytes(source));
                 window.Add([source]);
-                var button=(Button)window.FindName("EditPdfButton");button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var button=(Button)window.FindName("EditPdfButton");
+                using(var initialization=new CancellationTokenSource(TimeSpan.FromSeconds(90)))while(window.ActivePdfEditor==null)await Task.Delay(100,initialization.Token);
                 var editor=window.ActivePdfEditor??throw new Exception("No inline editor");
                 await editor.Ready.WaitAsync(TimeSpan.FromSeconds(60));
                 if(Application.Current.Windows.Count!=1 || Window.GetWindow(editor)!=window)throw new Exception("Editor opened outside main window");
-                if(((WebView2)window.FindName("PdfViewer")).Visibility==Visibility.Visible)throw new Exception("Native PDF obscures editor");
+                CheckViewing(editor);
+                var sourceTool=editor.RibbonButtons.Single(x=>x.Tag.ToString()=="0");sourceTool.IsChecked=true;sourceTool.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                using(var activating=new CancellationTokenSource(TimeSpan.FromSeconds(30)))while(editor.IsViewing)await Task.Delay(100,activating.Token);
                 var item=editor.SourceTextItems.Single(t=>t.Text.Contains("123,456"));
                 editor.SelectSourceText(item.Id);
+                await Dispatcher.Yield(DispatcherPriority.Render);window.UpdateLayout();
                 var inline=Descendants(editor).OfType<TextBox>().Single(t=>t.Text==item.Text && t!=editor.FindName("EditText"));
                 inline.Text="수정 금액 987,654원";
                 await Dispatcher.Yield(DispatcherPriority.Render);window.UpdateLayout();
@@ -39,9 +43,9 @@ internal static class InlinePdfEditUiTest
                 await editor.SaveAndFinishAsync(target);
                 using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(45));
                 var files=(DataGrid)window.FindName("Files");
-                while(window.ActivePdfEditor!=null || (files.SelectedItem as FileJob)?.Source!=target || ((WebView2)window.FindName("PdfViewer")).Visibility!=Visibility.Visible)await Task.Delay(100,timeout.Token);
+                while(window.ActivePdfEditor==null || ReferenceEquals(window.ActivePdfEditor,editor) || (files.SelectedItem as FileJob)?.Source!=target || ((WebView2)window.FindName("PdfViewer")).Visibility!=Visibility.Visible)await Task.Delay(100,timeout.Token);
                 if(!hash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(source))))throw new Exception("Original changed");
-                if(Application.Current.Windows.Count!=1 || (string?)button.Content!="수정")throw new Exception("Did not return to main viewer");
+                if(Application.Current.Windows.Count!=1 || button.Visibility!=Visibility.Collapsed)throw new Exception("Did not return to main viewer");
                 Console.WriteLine("PASS main-window inline editing: no extra window, native viewer hidden, original text selected, direct typing/apply, undo/redo, new PDF save + new tab, source unchanged. "+target);result=0;
             }catch(Exception ex){Console.Error.WriteLine(ex);}
             finally {
@@ -51,6 +55,7 @@ internal static class InlinePdfEditUiTest
         };
         app.Run();return result;
     }
+    static void CheckViewing(PdfEditorView editor){if(!editor.IsViewing)throw new Exception("Initial unified viewer missing");}
     static IEnumerable<DependencyObject> Descendants(DependencyObject root) {
         for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++){var child=VisualTreeHelper.GetChild(root,i);yield return child;foreach(var nested in Descendants(child))yield return nested;}
     }

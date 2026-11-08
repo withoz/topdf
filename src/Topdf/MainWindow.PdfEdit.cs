@@ -1,46 +1,64 @@
 using System.IO;
 using System.Windows;
-
+using System.Windows.Controls;
+using Microsoft.Web.WebView2.Core;
 namespace Topdf;
 public partial class MainWindow
 {
     PdfEditorView? pdfEditor;
+    FileJob? editorJob;
+    string? editorSource;
     public PdfEditorView? ActivePdfEditor => pdfEditor;
-    async void EditPdf(object sender, RoutedEventArgs e)
+    async void EditPdf(object sender,RoutedEventArgs e)
     {
-        if (pdfEditor != null) {
-            if (!pdfEditor.CanClose()) return;
-            EndPdfEditing(); await ShowPreviewAsync(SelectedJob); return;
-        }
-        if (SelectedJob is not { Pdf: not null } job) { Summary.Text = "PDF 또는 변환이 완료된 문서를 먼저 선택하세요."; return; }
-        await StartPdfEditorAsync(job.Pdf,Path.GetFileName(job.Source));
+        if(pdfEditor==null && SelectedJob is {Pdf:not null} job)await StartPdfEditorAsync(job.Pdf,job.Name);
+        if(pdfEditor!=null){await pdfEditor.Ready;pdfEditor.EnterEditing();}
+    }
+    static string? EditorPath(FileJob? job)=>job!=null&&Path.GetExtension(job.Source).Equals(".topdf",StringComparison.OrdinalIgnoreCase)?job.Source:job?.Pdf;
+    bool CanChangeDocument(FileJob? next)
+    {
+        if(pdfEditor==null || ReferenceEquals(next,editorJob) && string.Equals(EditorPath(next),editorSource,StringComparison.OrdinalIgnoreCase))return true;
+        if(!pdfEditor.CanClose()){if(editorJob!=null && jobs.Contains(editorJob))Files.SelectedItem=editorJob;return false;}
+        EndPdfEditing();return true;
     }
     async Task StartPdfEditorAsync(string source,string name)
     {
-        if(pdfEditor!=null){if(!pdfEditor.CanClose())return;EndPdfEditing();}
-        SetMenuOpen(false); SmartToggle.IsChecked = false; previewVersion++;
-        pdfEditor = new PdfEditorView(source, name);
-        pdfEditor.Saved += async (_,_) => {
-            var result = pdfEditor?.ResultPath;
-            EndPdfEditing();
-            if (closed || result == null) return;
-            await OpenFilesAsync([result]);
-            Summary.Text = "수정본을 새 탭으로 열었습니다. 원본은 보존했습니다.";
+        if(pdfEditor!=null){if(string.Equals(editorSource,source,StringComparison.OrdinalIgnoreCase))return;if(!pdfEditor.CanClose())return;EndPdfEditing();}
+        var editor=new PdfEditorView(source,name);pdfEditor=editor;editorSource=source;editorJob=SelectedJob;
+        editor.Saved+=async(_,_)=>{
+            if(!ReferenceEquals(pdfEditor,editor))return;var result=editor.ResultPath;EndPdfEditing();
+            if(closed||result==null)return;await OpenFilesAsync([result]);Summary.Text="수정본을 새 탭으로 열었습니다. 원본은 보존했습니다.";
         };
-        PdfViewer.Visibility = Visibility.Collapsed; EmptyPreview.Visibility = Visibility.Collapsed;
-        InlineEditorHost.Content = pdfEditor; InlineEditorHost.Visibility = Visibility.Visible;
-        EditPdfButton.Content = "보기로";
-        DocumentTabs.IsEnabled = Files.IsEnabled = MenuToggle.IsEnabled = SmartToggle.IsEnabled = false;
-        AllowDrop = false;
-        Summary.Text = "본문 클릭 → 직접 입력 → Enter 적용 · 새 PDF로 저장";
-        try { await pdfEditor.Ready; } catch (Exception ex) { Summary.Text = ex.Message; }
+        editor.NavigateViewingPdf=NavigateUnifiedPreviewAsync;editor.ReadViewingPosition=ReadViewingPositionAsync;
+        PreviewHost.Children.Remove(PdfViewer);editor.AttachNativeViewer(PdfViewer,source);
+        InlineEditorHost.Content=editor;InlineEditorHost.Visibility=Visibility.Visible;EmptyPreview.Visibility=Visibility.Collapsed;
+        try {
+            await editor.Ready;
+            if(closed || !ReferenceEquals(pdfEditor,editor))return;
+            if(Path.GetExtension(source).Equals(".topdf",StringComparison.OrdinalIgnoreCase)) {
+                await editor.ReturnToViewingAsync(true);
+                if(editorJob!=null && PdfViewer.Source!=null)editorJob.Pdf=PdfViewer.Source.LocalPath;
+            }
+            Summary.Text="도구 선택으로 수정 · Esc로 보기";
+        } catch(OperationCanceledException) {} catch(Exception ex){if(ReferenceEquals(pdfEditor,editor))Summary.Text="보기는 계속 사용할 수 있습니다. 편집 준비 실패: "+ex.Message;}
+    }
+    async Task NavigateUnifiedPreviewAsync(string pdf,int page,double zoom)
+    {
+        viewerInitialization??=InitializeViewerAsync();await viewerInitialization;if(closed)return;
+        // A fresh query forces PDF open parameters to apply even when only page/zoom changed.
+        var uri=new Uri(Path.GetFullPath(pdf)).AbsoluteUri+"?topdfView="+Guid.NewGuid().ToString("N");allowedPreviewUri=uri;
+        var target=uri+"#page="+page+"&zoom="+zoom.ToString("0.#",System.Globalization.CultureInfo.InvariantCulture);
+        var loaded=new TaskCompletionSource<bool>();var core=PdfViewer.CoreWebView2;
+        void Completed(object? sender,CoreWebView2NavigationCompletedEventArgs e){if(e.NavigationId==previewNavigation)loaded.TrySetResult(e.IsSuccess);}
+        core.NavigationCompleted+=Completed;
+        try{core.Navigate(target);if(!await loaded.Task.WaitAsync(TimeSpan.FromSeconds(45),lifetime.Token))throw new IOException("수정본 미리보기를 열 수 없습니다.");}
+        finally{core.NavigationCompleted-=Completed;}
     }
     void EndPdfEditing()
     {
-        pdfEditor?.DisposeEditor(); pdfEditor = null;
-        InlineEditorHost.Content = null; InlineEditorHost.Visibility = Visibility.Collapsed;
-        EditPdfButton.Content = "수정";
-        DocumentTabs.IsEnabled = Files.IsEnabled = MenuToggle.IsEnabled = SmartToggle.IsEnabled = true;
-        AllowDrop = true;
+        if(pdfEditor!=null){pdfEditor.DetachNativeViewer();pdfEditor.DisposeEditor();}
+        pdfEditor=null;editorJob=null;editorSource=null;
+        InlineEditorHost.Content=null;InlineEditorHost.Visibility=Visibility.Collapsed;
+        if(!PreviewHost.Children.Contains(PdfViewer))PreviewHost.Children.Insert(0,PdfViewer);
     }
 }

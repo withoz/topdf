@@ -65,6 +65,7 @@ public partial class PdfEditorView
     }
     public void SelectSourceText(string id)
     {
+        EnterEditing();
         ApplyInlineText();
         selectedIds.Clear(); selectedSource=SourceTextItems.Single(t=>t.Id==id);selectedId="";
         EditText.Text=selectedSource.Text;SelectFont(selectedSource.FontSize,selectedSource.Color);
