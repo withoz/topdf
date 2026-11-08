@@ -1,0 +1,164 @@
+diff --git a/src/document_core/queries/rendering.rs b/src/document_core/queries/rendering.rs
+index c435fd5..c8ba658 100644
+--- a/src/document_core/queries/rendering.rs
++++ b/src/document_core/queries/rendering.rs
+@@ -867,10 +867,9 @@ fn assign_master_pages_for_section(
+         page.extra_master_pages.clear();
+     }
+ 
++    // A section without local masters still inherits the prior odd/even master.
++    // Keep hide_master_page handling below, including for empty local lists.
+     let mps = &section.section_def.master_pages;
+-    if mps.is_empty() {
+-        return;
+-    }
+ 
+     let base_mp_indices: Vec<usize> = mps
+         .iter()
+diff --git a/src/renderer/layout.rs b/src/renderer/layout.rs
+index 6ee65a4..9d1926f 100644
+--- a/src/renderer/layout.rs
++++ b/src/renderer/layout.rs
+@@ -4816,10 +4816,28 @@ impl LayoutEngine {
+             && hf_paragraphs.iter().all(|para| {
+                 !para.line_segs.is_empty()
+                     && !para.controls.iter().any(|c| {
+-                        matches!(
+-                            c,
+-                            Control::Table(_) | Control::Shape(_) | Control::Picture(_)
+-                        )
++                        match c {
++                            // An absolute behind/in-front table is out of the story's
++                            // line flow. Its declared box must not defeat stored band
++                            // alignment of the host line (including an empty line).
++                            Control::Table(t) => {
++                                t.common.treat_as_char
++                                    || !matches!(
++                                        t.common.text_wrap,
++                                        TextWrap::BehindText | TextWrap::InFrontOfText
++                                    )
++                                    || !matches!(
++                                        t.common.horz_rel_to,
++                                        HorzRelTo::Paper | HorzRelTo::Page
++                                    )
++                                    || !matches!(
++                                        t.common.vert_rel_to,
++                                        VertRelTo::Paper | VertRelTo::Page
++                                    )
++                            }
++                            Control::Shape(_) | Control::Picture(_) => true,
++                            _ => false,
++                        }
+                     })
+             });
+         let vert_align = if text_only_footer {
+@@ -4862,13 +4880,12 @@ impl LayoutEngine {
+         } else {
+             0.0
+         };
+-        let mut y_offset = area.y
+-            + match vert_align {
+-                1 => slack / 2.0,
+-                2 => slack,
+-                _ => 0.0,
+-            }
+-            + stored_mixed_footer_leading;
++        let story_leading = match vert_align {
++            1 => slack / 2.0,
++            2 => slack,
++            _ => 0.0,
++        } + stored_mixed_footer_leading;
++        let mut y_offset = area.y + story_leading;
+         for (i, para) in hf_paragraphs.iter().enumerate() {
+             // 테이블 컨트롤이 있으면 테이블 렌더링
+             let has_table = para.controls.iter().any(|c| matches!(c, Control::Table(_)));
+@@ -4878,6 +4895,7 @@ impl LayoutEngine {
+                 .iter()
+                 .any(|c| matches!(c, Control::Picture(_)));
+             if has_table {
++                let paragraph_y = y_offset;
+                 for (ci, ctrl) in para.controls.iter().enumerate() {
+                     if let Control::Table(t) = ctrl {
+                         let alignment = styles
+@@ -4910,6 +4928,39 @@ impl LayoutEngine {
+                         };
+                         let table_y = y_offset + line_anchor_offset;
+                         let table_area = table_area.unwrap_or(area);
++                        // TOPDF: absolute objects inside an HF story are relative to
++                        // that story frame, just like layout_header_footer_picture.
++                        // Do not reuse the physical page origin or body dimensions.
++                        let absolute_h =
++                            matches!(t.common.horz_rel_to, HorzRelTo::Paper | HorzRelTo::Page);
++                        let absolute_v =
++                            matches!(t.common.vert_rel_to, VertRelTo::Paper | VertRelTo::Page);
++                        let story_origin = if !t.common.treat_as_char && absolute_h && absolute_v {
++                            let story_area = LayoutRect {
++                                y: area.y + story_leading,
++                                ..*area
++                            };
++                            let (w, h) = self.resolve_object_size(
++                                &t.common,
++                                &story_area,
++                                &story_area,
++                                &story_area,
++                            );
++                            let (x, y) = self.compute_object_position(
++                                &t.common,
++                                w,
++                                h,
++                                &story_area,
++                                &story_area,
++                                &story_area,
++                                &story_area,
++                                table_y,
++                                alignment,
++                            );
++                            Some((Some(x), y))
++                        } else {
++                            None
++                        };
+                         y_offset = self.layout_table(
+                             tree,
+                             area_node,
+@@ -4934,11 +4985,40 @@ impl LayoutEngine {
+                             false,
+                             is_header,
+                             0.0,
+-                            None,
++                            story_origin,
+                             Self::standalone_table_char_border_fill(Some(para), t.as_ref(), styles),
+                         );
+                     }
+                 }
++                if para
++                    .controls
++                    .iter()
++                    .filter_map(|c| match c {
++                        Control::Table(t) => Some(t),
++                        _ => None,
++                    })
++                    .all(|t| !t.common.treat_as_char)
++                    && para
++                        .text
++                        .chars()
++                        .any(|c| !c.is_control() && !c.is_whitespace() && c != '\u{fffc}')
++                {
++                    let comp = self.compose_header_footer_paragraph(para, page_number, styles);
++                    y_offset = self.layout_paragraph(
++                        tree,
++                        area_node,
++                        para,
++                        Some(&comp),
++                        styles,
++                        area,
++                        paragraph_y,
++                        0,
++                        usize::MAX - i,
++                        None,
++                        None,
++                        None,
++                    );
++                }
+             } else if has_picture {
+                 // Picture 컨트롤이 있는 문단
+                 let comp = self.compose_header_footer_paragraph(para, page_number, styles);

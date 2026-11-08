@@ -37,7 +37,7 @@
 
 ## 빌드 및 실행
 
-Windows 10/11 x64, .NET 10 SDK, Node.js 20 이상(엔진 빌드 때만), Python 3.11 이상(CAD), Microsoft Edge WebView2 Runtime이 필요합니다.
+Windows 10/11 x64, .NET 10 SDK, Node.js 20 이상과 Rust/MSVC 빌드 도구(엔진 빌드 때만), Python 3.11 이상(CAD), Microsoft Edge WebView2 Runtime이 필요합니다.
 
 ```powershell
 git clone https://github.com/withoz/topdf.git
@@ -52,7 +52,7 @@ dotnet build src/Topdf/Topdf.csproj -o artifacts/app
 .\artifacts\app\Topdf.exe
 ```
 
-`Setup-Engines.ps1`은 고정 버전 공식 엔진을 프로젝트 안으로 다운로드하고 SHA-256을 확인한 뒤 XLS용 JavaScript 번들을 빌드합니다. 시스템 기본 앱이나 레지스트리는 변경하지 않습니다. Node는 XLS 런타임에 사용하지 않습니다.
+`Setup-Engines.ps1`은 고정 버전 공식 엔진을 프로젝트 안으로 다운로드하고 SHA-256을 확인한 뒤 HWP 레이아웃 보정 패치와 XLS용 JavaScript 번들을 빌드합니다. HWP는 고정된 upstream 소스와 패치 해시로 재현하며, 설치 사용자에게 Rust/MSVC 설치는 필요하지 않습니다. [HWP 레이아웃 보정](docs/HWP-LAYOUT-FIX.md)을 참고하세요. 시스템 기본 앱이나 레지스트리는 변경하지 않습니다. Node는 XLS 런타임에 사용하지 않습니다.
 
 빌드만 확인하려면 `-SkipNative` 옵션으로 네이티브 엔진 다운로드를 생략할 수 있습니다. 이 경우 해당 엔진의 실제 변환은 동작하지 않습니다. [개발 안내](docs/DEVELOPMENT.md)를 참고하세요.
 

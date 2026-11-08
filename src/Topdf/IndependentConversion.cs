@@ -8,7 +8,7 @@ public static class IndependentConversion
 {
     public static bool Supports(string path) => Path.GetExtension(path).ToLowerInvariant() is ".hwp" or ".hwpx" or ".docx" or ".xls" or ".xlsx" or ".dwg" or ".dxf" or ".pdf";
     public static string EngineName(string path) => Path.GetExtension(path).ToLowerInvariant() switch {
-        ".hwp" or ".hwpx" => "rhwp 0.8.7",
+        ".hwp" or ".hwpx" => "rhwp 0.8.7 · 머리글·꼬리글 보정",
         ".docx" => "office2pdf 0.10.0",
         ".xlsx" => "MiniPdf 0.43.2",
         ".xls" => "Ream 1.33.1 · 병합 셀 보정",

@@ -20,6 +20,12 @@ if((Get-AuthenticodeSignature $Bootstrapper).Status -ne 'Valid'){throw 'Invalid 
 foreach($relative in @('rhwp/rhwp.exe','office2pdf/office2pdf.exe','libredwg/dwg2dxf.exe','libredwg/COPYING','ream/index.html','ream/ream.bundle.mjs','tesseract/tesseract50.dll','tesseract/tessdata/kor.traineddata','tesseract/msvcp140.dll','llama/llama-server.exe','llama/models/qwen2.5-0.5b-instruct-q4_k_m.gguf')){
     if(-not (Test-Path -LiteralPath (Join-Path $root "src/Topdf/engines/vendor/$relative"))){throw "Missing conversion engine: $relative. Run scripts/Setup-Engines.ps1 first."}
 }
+$layoutMetadata=Join-Path $root 'src/Topdf/engines/vendor/rhwp/topdf-layout.json'
+if(-not (Test-Path -LiteralPath $layoutMetadata)){throw 'Missing patched HWP engine. Run scripts/Build-RhwpEngine.ps1.'}
+$layout=Get-Content -LiteralPath $layoutMetadata -Raw | ConvertFrom-Json
+$layoutLock=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'rhwp-layout.lock.json') -Raw | ConvertFrom-Json
+if($layout.patchSha256 -ne $layoutLock.patchSha256 -or $layout.binarySha256 -ne (Get-FileHash -LiteralPath (Join-Path $root 'src/Topdf/engines/vendor/rhwp/rhwp.exe') -Algorithm SHA256).Hash.ToLowerInvariant()){throw 'Patched HWP engine does not match pinned source/patch. Rebuild it.'}
+if(-not (Test-Path -LiteralPath (Join-Path $root 'src/Topdf/engines/vendor/rhwp/vcruntime140.dll'))){throw 'Missing app-local rhwp runtime'}
 $stage=Join-Path $root ('artifacts/installer-build-'+[guid]::NewGuid().ToString('N'))
 $package=Join-Path $stage 'package'
 New-Item -ItemType Directory -Force $package | Out-Null

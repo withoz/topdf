@@ -36,6 +36,7 @@ if (-not $SkipNative) {
     $officeLicense = Join-Path $vendorRoot 'office2pdf/LICENSE'
     Invoke-WebRequest 'https://raw.githubusercontent.com/developer0hye/office2pdf/v0.10.0/LICENSE' -OutFile $officeLicense
     if ((Get-FileHash -LiteralPath $officeLicense -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'a69f60df4102c74db295b45bdeca8bb300ecaa954a319de94cbe4e8e337e98f9') { throw 'office2pdf license checksum mismatch.' }
+    & (Join-Path $PSScriptRoot 'Build-RhwpEngine.ps1')
     Write-Host 'Native engines prepared; review docs/THIRD_PARTY.md before redistribution.'
 }
 

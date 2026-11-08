@@ -8,7 +8,7 @@
  #error Bootstrapper must point to the signed Microsoft WebView2 bootstrapper
 #endif
 #ifndef AppVersion
- #define AppVersion "0.3.2"
+ #define AppVersion "0.3.3"
 #endif
 [Setup]
 AppId={{7BB8D838-71D7-4CA3-A7A4-DB997AFCACB9}
