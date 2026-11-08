@@ -1,0 +1,40 @@
+<Window x:Class="Topdf.PdfEditorWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="TOPDF · PDF 수정" Width="1160" Height="820" MinWidth="900" MinHeight="600" WindowStartupLocation="CenterOwner" PreviewKeyDown="EditorShortcuts" Background="#EDF1F5">
+ <DockPanel>
+  <Border DockPanel.Dock="Top" Background="White" Padding="10" BorderBrush="#D9E0E8" BorderThickness="0,0,0,1">
+   <StackPanel>
+    <DockPanel Margin="0,0,0,8">
+     <Button x:Name="EditorSave" Content="새 PDF로 저장" Click="SaveEditedPdf" DockPanel.Dock="Right" Padding="14,6"/>
+     <WrapPanel x:Name="EditorTools">
+      <ComboBox x:Name="EditTool" Width="76" SelectedIndex="0" Margin="0,0,8,0"><ComboBoxItem Content="선택"/><ComboBoxItem Content="글자"/><ComboBoxItem Content="메모"/><ComboBoxItem Content="도장"/></ComboBox>
+      <TextBox x:Name="EditText" Width="220" Height="40" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" ToolTip="추가할 글자 또는 메모" Margin="0,0,6,0"/>
+      <ComboBox x:Name="EditFontSize" Width="56" SelectedIndex="1" Margin="0,0,6,0"><ComboBoxItem Content="10"/><ComboBoxItem Content="14"/><ComboBoxItem Content="18"/><ComboBoxItem Content="24"/><ComboBoxItem Content="36"/><ComboBoxItem Content="48"/></ComboBox>
+      <ComboBox x:Name="EditColor" Width="60" SelectedIndex="0" Margin="0,0,6,0"><ComboBoxItem Content="검정"/><ComboBoxItem Content="빨강"/><ComboBoxItem Content="파랑"/></ComboBox>
+      <Button Content="내용 적용" Click="ApplySelectedText" Padding="8,5" Margin="0,0,6,0"/>
+      <Button Content="도장 선택" Click="ChooseStamp" Padding="8,5" Margin="0,0,6,0"/>
+      <Button Content="−" Click="ShrinkElement" Padding="8,5" ToolTip="선택 항목 축소"/>
+      <Button Content="+" Click="GrowElement" Padding="8,5" ToolTip="선택 항목 확대" Margin="0,0,6,0"/>
+      <Button Content="항목 삭제" Click="DeleteElement" Padding="8,5"/>
+     </WrapPanel>
+    </DockPanel>
+    <WrapPanel x:Name="EditorHistory">
+     <Button Content="되돌리기" Click="UndoEdit" Padding="10,5" Margin="0,0,6,0"/>
+     <Button Content="다시 실행" Click="RedoEdit" Padding="10,5" Margin="0,0,14,0"/>
+     <Button Content="쪽 회전 ↶" Click="RotateLeft" Padding="10,5" Margin="0,0,6,0"/>
+     <Button Content="쪽 회전 ↷" Click="RotateRight" Padding="10,5" Margin="0,0,6,0"/>
+     <Button Content="쪽 삭제" Click="DeletePage" Padding="10,5" Margin="0,0,14,0"/>
+     <Button Content="앞으로" Click="MovePageUp" Padding="10,5" Margin="0,0,6,0"/>
+     <Button Content="뒤로" Click="MovePageDown" Padding="10,5" Margin="0,0,14,0"/>
+     <ComboBox x:Name="EditZoom" Width="80" SelectedIndex="1" SelectionChanged="ZoomChanged"><ComboBoxItem Content="75%"/><ComboBoxItem Content="100%"/><ComboBoxItem Content="125%"/><ComboBoxItem Content="150%"/></ComboBox>
+    </WrapPanel>
+   </StackPanel>
+  </Border>
+  <TextBlock x:Name="EditStatus" DockPanel.Dock="Bottom" Padding="12,7" Text="PDF를 준비하고 있습니다…" TextWrapping="Wrap"/>
+  <ListBox x:Name="EditPages" DockPanel.Dock="Left" Width="115" Margin="8" DisplayMemberPath="Label" SelectionChanged="EditorPageChanged"/>
+  <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Background="#68727C" Padding="20">
+   <Grid x:Name="EditSurface" HorizontalAlignment="Center" VerticalAlignment="Top" Background="White">
+    <Image x:Name="EditPageImage" Stretch="Fill"/>
+    <Canvas x:Name="EditCanvas" Background="Transparent" MouseLeftButtonDown="PageMouseDown" MouseMove="PageMouseMove" MouseLeftButtonUp="PageMouseUp"/>
+   </Grid>
+  </ScrollViewer>
+ </DockPanel>
+</Window>

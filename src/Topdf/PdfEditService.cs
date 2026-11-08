@@ -1,0 +1,87 @@
+using System.Diagnostics;
+using System.IO;
+using System.Text.Json;
+
+namespace Topdf;
+
+public sealed record PdfEditPageInfo(int SourceIndex, double Width, double Height);
+public sealed record PdfEditInfo(string SourceSha256, PdfEditPageInfo[] Pages);
+public sealed class PdfEditElement
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Kind { get; set; } = "text";
+    public string Text { get; set; } = "";
+    public string? ImagePath { get; set; }
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
+    public double FontSize { get; set; } = 14;
+    public string Color { get; set; } = "#111111";
+    public int Rotation { get; set; }
+}
+public sealed class PdfEditPage
+{
+    public int SourceIndex { get; set; }
+    public int Rotation { get; set; }
+    public List<PdfEditElement> Elements { get; set; } = [];
+    public string Label => $"원본 {SourceIndex+1}쪽";
+}
+public sealed class PdfEditPlan
+{
+    public string SourceSha256 { get; set; } = "";
+    public List<PdfEditPage> Pages { get; set; } = [];
+}
+
+public static class PdfEditService
+{
+    static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    public static PdfEditPlan Clone(PdfEditPlan plan) => JsonSerializer.Deserialize<PdfEditPlan>(JsonSerializer.Serialize(plan, Json), Json)!;
+    public static async Task<PdfEditInfo> InspectAsync(string source, string folder, CancellationToken cancellation)
+    {
+        var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".json");
+        await RunAsync(["inspect", source, output], cancellation);
+        return JsonSerializer.Deserialize<PdfEditInfo>(await File.ReadAllTextAsync(output, cancellation), Json)!;
+    }
+    public static async Task<string> RenderAsync(string source, string folder, int page, int rotation, CancellationToken cancellation)
+    {
+        var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".png");
+        await RunAsync(["render", source, output, "--page", page.ToString(), "--rotation", rotation.ToString()], cancellation);
+        return output;
+    }
+    public static async Task<string> ExportAsync(string source, string folder, PdfEditPlan plan, CancellationToken cancellation)
+    {
+        var specification = Path.Combine(folder, Guid.NewGuid().ToString("N")+".json");
+        var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".pdf");
+        await File.WriteAllTextAsync(specification, JsonSerializer.Serialize(plan, Json), cancellation);
+        await RunAsync(["export", source, output, "--plan", specification], cancellation);
+        return output;
+    }
+    public static async Task SaveNewAsync(string source, string destination, CancellationToken cancellation)
+    {
+        // CreateNew rejects source aliases/hardlinks and all existing output files.
+        await using var input = File.OpenRead(source);
+        var created = false;
+        try {
+            await using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
+                created = true;
+                await input.CopyToAsync(output, cancellation);
+                await output.FlushAsync(cancellation);
+            }
+        } catch { if (created) File.Delete(destination); throw; }
+    }
+    static async Task RunAsync(string[] arguments, CancellationToken cancellation)
+    {
+        var info = new ProcessStartInfo(AppPaths.Python) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        info.Environment["PYTHONUTF8"] = "1";
+        info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "engines", "pdf_edit.py"));
+        foreach (var value in arguments) info.ArgumentList.Add(value);
+        using var process = Process.Start(info) ?? throw new IOException("PDF 편집 엔진 실행 실패");
+        var stdout = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync();
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromMinutes(3));
+        try { await process.WaitForExitAsync(timeout.Token); }
+        catch (OperationCanceledException) { try { process.Kill(true); } catch (InvalidOperationException) { } await process.WaitForExitAsync(); if (cancellation.IsCancellationRequested) throw; throw new TimeoutException("PDF 편집 처리 시간이 초과됐습니다."); }
+        await Task.WhenAll(stdout, stderr);
+        if (process.ExitCode != 0) { var text = (await stderr).Trim(); throw new IOException(text.Length == 0 ? "PDF 편집 실패" : text[..Math.Min(1200, text.Length)]); }
+    }
+}

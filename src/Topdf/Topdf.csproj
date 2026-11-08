@@ -5,7 +5,7 @@
     <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.3.0</Version>
+    <Version>0.3.1</Version>
     <ApplicationIcon>Assets/topdf.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
@@ -14,6 +14,7 @@
     <PackageReference Include="MiniPdf" Version="0.43.2" />
     <Content Include="engines/convert.py" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/document_tools.py" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="engines/pdf_edit.py" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/requirements.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/vendor/**/*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

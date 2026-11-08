@@ -16,3 +16,4 @@ typing_extensions==4.16.0
 tzdata==2026.6
 pypdfium2==5.15.1
 xlrd==2.0.2
+reportlab==5.1.0

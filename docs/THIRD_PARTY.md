@@ -15,6 +15,7 @@ TOPDF 자체 소스의 MIT 라이선스는 아래 외부 구성 요소의 라이
 | Tesseract / 언어 모델 | smart-engines.lock.json | Apache-2.0 | https://github.com/tesseract-ocr/tesseract / https://github.com/tesseract-ocr/tessdata_fast |
 | Leptonica | OCR DLL 배포본 참조 | upstream BSD-style | https://github.com/DanBloomberg/leptonica |
 | pypdfium2 / PDFium | Python lock 참조 | upstream 고지와 포함 종속성 라이선스 | https://github.com/pypdfium2-team/pypdfium2 |
+| ReportLab | 5.1.0 | BSD | https://www.reportlab.com/opensource/ |
 | xlrd | 2.0.2 | BSD | https://github.com/python-excel/xlrd |
 | llama.cpp | b12199 | MIT / 포함 LLVM OpenMP 고지 | https://github.com/ggml-org/llama.cpp |
 | Qwen2.5-0.5B-Instruct-GGUF | Q4_K_M, SHA-256 고정 | Apache-2.0 | https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF |
