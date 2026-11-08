@@ -75,6 +75,7 @@
     </Border></Popup>
    </StackPanel>
   </Border>
+  <ContentControl x:Name="DocumentTabsHost" DockPanel.Dock="Top" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
   <TextBlock x:Name="EditStatus" DockPanel.Dock="Bottom" Padding="12,7" Text="PDF를 준비하고 있습니다…" TextWrapping="Wrap"/>
   <Grid>
    <ContentControl x:Name="NativeViewingHost" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>

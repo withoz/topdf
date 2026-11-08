@@ -19,6 +19,9 @@ internal static class UnifiedUiTest
             try {
                 var source=Path.GetFullPath(input);var hash=SHA256.HashData(File.ReadAllBytes(source));window.Add([source]);
                 await Until(()=>window.ActivePdfEditor!=null);var editor=window.ActivePdfEditor!;await editor.Ready.WaitAsync(TimeSpan.FromSeconds(90));
+                window.UpdateLayout();
+                var tabs=(ListBox)window.FindName("DocumentTabs");var ribbon=(StackPanel)editor.FindName("EditorRibbon");
+                Check(tabs.TransformToAncestor(window).Transform(new Point()).Y>ribbon.TransformToAncestor(window).Transform(new Point()).Y,"Document tabs below ribbon");
                 var viewer=(WebView2)window.FindName("PdfViewer");Check(editor.IsViewing&&viewer.Visibility==Visibility.Visible,"Initially viewing with ribbon");Check(((Button)window.FindName("EditPdfButton")).Visibility==Visibility.Collapsed,"No separate edit button");
                 var tool=editor.RibbonButtons.Single(x=>x.Tag.ToString()=="5");tool.IsChecked=true;tool.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
                 await Until(()=>!editor.IsViewing);Check(!editor.IsViewing&&viewer.Visibility==Visibility.Collapsed,"Tool click immediately enables edit");

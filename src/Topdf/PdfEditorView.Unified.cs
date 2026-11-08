@@ -20,6 +20,14 @@ public partial class PdfEditorView
         EditStatus.Visibility=Visibility.Collapsed;NativeViewingHost.Content=viewer;NativeViewingHost.Visibility=Visibility.Visible;EditingArea.Visibility=Visibility.Collapsed;ViewTool.Visibility=Visibility.Visible;
         RibbonSelectionChanged(this,new SelectionChangedEventArgs(SelectorEvent,Array.Empty<object>(),Array.Empty<object>()));
     }
+    public void AttachDocumentTabs(FrameworkElement tabs)
+    {
+        DocumentTabsHost.Content=tabs;DocumentTabsHost.Visibility=Visibility.Visible;
+    }
+    public void DetachDocumentTabs()
+    {
+        DocumentTabsHost.Content=null;DocumentTabsHost.Visibility=Visibility.Collapsed;
+    }
     public FrameworkElement? DetachNativeViewer()
     {
         var viewer=NativeViewingHost.Content as FrameworkElement;NativeViewingHost.Content=null;return viewer;

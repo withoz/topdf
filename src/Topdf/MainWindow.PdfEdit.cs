@@ -31,6 +31,9 @@ public partial class MainWindow
         };
         editor.NavigateViewingPdf=NavigateUnifiedPreviewAsync;editor.ReadViewingPosition=ReadViewingPositionAsync;
         PreviewHost.Children.Remove(PdfViewer);editor.AttachNativeViewer(PdfViewer,source);
+        LayoutRoot.Children.Remove(DocumentTabs);
+        DocumentTabs.SetBinding(System.Windows.Controls.Primitives.Selector.SelectedItemProperty,new System.Windows.Data.Binding("SelectedItem") {Source=Files,Mode=System.Windows.Data.BindingMode.TwoWay});
+        editor.AttachDocumentTabs(DocumentTabs);
         InlineEditorHost.Content=editor;InlineEditorHost.Visibility=Visibility.Visible;EmptyPreview.Visibility=Visibility.Collapsed;
         try {
             await editor.Ready;
@@ -56,9 +59,10 @@ public partial class MainWindow
     }
     void EndPdfEditing()
     {
-        if(pdfEditor!=null){pdfEditor.DetachNativeViewer();pdfEditor.DisposeEditor();}
+        if(pdfEditor!=null){pdfEditor.DetachDocumentTabs();pdfEditor.DetachNativeViewer();pdfEditor.DisposeEditor();}
         pdfEditor=null;editorJob=null;editorSource=null;
         InlineEditorHost.Content=null;InlineEditorHost.Visibility=Visibility.Collapsed;
+        if(!LayoutRoot.Children.Contains(DocumentTabs))LayoutRoot.Children.Add(DocumentTabs);
         if(!PreviewHost.Children.Contains(PdfViewer))PreviewHost.Children.Insert(0,PdfViewer);
     }
 }
