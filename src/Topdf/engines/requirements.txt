@@ -2,3 +2,5 @@ ezdxf==1.4.4
 matplotlib==3.11.2
 pywin32==312; sys_platform == 'win32'
 pypdf==6.13.2
+pypdfium2==5.15.1
+xlrd==2.0.2

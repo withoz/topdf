@@ -23,5 +23,9 @@ jobs:
         run: dotnet build src/Topdf/Topdf.csproj --configuration Release
       - name: Build UI test harness
         run: dotnet build tests/PreviewSmoke/PreviewSmoke.csproj --configuration Release
+      - name: Build smart feature test harness
+        run: dotnet build tests/Smart/Smart.csproj --configuration Release
+      - name: Validate offline document worker syntax
+        run: python -m py_compile src/Topdf/engines/document_tools.py
       - name: Verify selected PDF exports
         run: dotnet run --project tests/ExportSmoke/ExportSmoke.csproj --configuration Release

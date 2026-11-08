@@ -12,6 +12,13 @@ TOPDF 자체 소스의 MIT 라이선스는 아래 외부 구성 요소의 라이
 | ezdxf | requirements.txt 참조 | MIT | https://github.com/mozman/ezdxf |
 | matplotlib | requirements.txt 참조 | upstream license | https://matplotlib.org/stable/project/license.html |
 | WebView2 | csproj 참조 | Microsoft package terms | https://www.nuget.org/packages/Microsoft.Web.WebView2 |
+| Tesseract / 언어 모델 | smart-engines.lock.json | Apache-2.0 | https://github.com/tesseract-ocr/tesseract / https://github.com/tesseract-ocr/tessdata_fast |
+| Leptonica | OCR DLL 배포본 참조 | upstream BSD-style | https://github.com/DanBloomberg/leptonica |
+| pypdfium2 / PDFium | Python lock 참조 | upstream 고지와 포함 종속성 라이선스 | https://github.com/pypdfium2-team/pypdfium2 |
+| xlrd | 2.0.2 | BSD | https://github.com/python-excel/xlrd |
+| llama.cpp | b12199 | MIT / 포함 LLVM OpenMP 고지 | https://github.com/ggml-org/llama.cpp |
+| Qwen2.5-0.5B-Instruct-GGUF | Q4_K_M, SHA-256 고정 | Apache-2.0 | https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF |
+| Microsoft app-local CRT | Visual Studio Redist 14.44 | Microsoft software license terms | https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files |
 
 다운로드 도구는 고정 버전의 공식 파일을 검증합니다. 이 저장소에는 외부 엔진 바이너리·글꼴을 커밋하지 않습니다. 다운로드 후 실행 파일과 각 라이선스는 로컬 `engines/vendor`에 준비합니다.
 

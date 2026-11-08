@@ -17,7 +17,7 @@ foreach($file in @($Compiler,(Join-Path $PythonRuntime 'python.exe'),$Bootstrapp
     if(-not (Test-Path -LiteralPath $file)){throw "Missing build prerequisite: $file. See docs/INSTALLER.md"}
 }
 if((Get-AuthenticodeSignature $Bootstrapper).Status -ne 'Valid'){throw 'Invalid WebView2 bootstrapper signature'}
-foreach($relative in @('rhwp/rhwp.exe','office2pdf/office2pdf.exe','libredwg/dwg2dxf.exe','libredwg/COPYING','ream/index.html','ream/ream.bundle.mjs')){
+foreach($relative in @('rhwp/rhwp.exe','office2pdf/office2pdf.exe','libredwg/dwg2dxf.exe','libredwg/COPYING','ream/index.html','ream/ream.bundle.mjs','tesseract/tesseract50.dll','tesseract/tessdata/kor.traineddata','tesseract/msvcp140.dll','llama/llama-server.exe','llama/models/qwen2.5-0.5b-instruct-q4_k_m.gguf')){
     if(-not (Test-Path -LiteralPath (Join-Path $root "src/Topdf/engines/vendor/$relative"))){throw "Missing conversion engine: $relative. Run scripts/Setup-Engines.ps1 first."}
 }
 $stage=Join-Path $root ('artifacts/installer-build-'+[guid]::NewGuid().ToString('N'))
@@ -34,7 +34,7 @@ if($CertificateThumbprint){
 $runtime=Join-Path $package 'runtime/python'
 New-Item -ItemType Directory -Force $runtime | Out-Null
 Copy-Item -Path (Join-Path $PythonRuntime '*') -Destination $runtime -Recurse -Force
-& (Join-Path $runtime 'python.exe') -c "import ezdxf, matplotlib, pypdf, win32com.client; print('CAD runtime verified')"
+& (Join-Path $runtime 'python.exe') -c "import ezdxf, matplotlib, pypdf, win32com.client, pypdfium2, xlrd; print('CAD and smart document runtime verified')"
 if($LASTEXITCODE -ne 0){throw 'Incomplete Python runtime'}
 $notices=Join-Path $package 'notices'
 New-Item -ItemType Directory -Force $notices | Out-Null

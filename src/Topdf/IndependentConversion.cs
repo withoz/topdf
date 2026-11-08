@@ -32,7 +32,7 @@ public static class IndependentConversion
         switch (extension) {
             case ".hwp": case ".hwpx":
                 executable = Path.Combine(vendor, "rhwp", "rhwp.exe");
-                arguments = ["export-pdf", input, "-o", pdf, "--font-path", Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "--profile", "print", "--json"];
+                arguments = ["export-pdf", input, "-o", pdf, "--font-path", Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "--fallback-mono", "Malgun Gothic", "--profile", "print", "--json"];
                 break;
             case ".docx":
                 executable = Path.Combine(vendor, "office2pdf", "office2pdf.exe");

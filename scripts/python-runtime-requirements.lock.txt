@@ -14,3 +14,5 @@ python-dateutil==4.0.0
 pywin32==312
 typing_extensions==4.16.0
 tzdata==2026.6
+pypdfium2==5.15.1
+xlrd==2.0.2

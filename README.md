@@ -20,6 +20,8 @@
 
 ## 주요 기능
 
+- 스마트 패널: 변환 품질 점검, 한국어·영어 OCR, 열린 문서 검색, 문장 비교, 로컬 AI 근거 답변, 폴더 자동 변환
+- 내장 경량 로컬 AI 모델 포함. 문서는 외부 AI 서비스에 전송하지 않습니다.
 - 파일 추가·드래그앤드롭 즉시 자동 변환, 변환 중 추가 파일도 순차 처리, 취소·재시도
 - 작은 문서 탭으로 전환·닫기, 같은 파일 중복 열기 방지
 - PDF 미리보기, 확대·페이지 이동·검색·인쇄
@@ -39,6 +41,8 @@ Windows 10/11 x64, .NET 10 SDK, Node.js 20 이상(엔진 빌드 때만), Python 
 git clone https://github.com/withoz/topdf.git
 cd topdf
 pwsh -File scripts/Setup-Engines.ps1
+# OCR·로컬 AI 포함 빌드는 다음 단계도 실행 (모델 약 491MB)
+pwsh -File scripts/Setup-SmartEngines.ps1
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r src/Topdf/engines/requirements.txt
 $env:TOPDF_PYTHON = (Resolve-Path .venv/Scripts/python.exe).Path
@@ -51,6 +55,8 @@ dotnet build src/Topdf/Topdf.csproj -o artifacts/app
 빌드만 확인하려면 `-SkipNative` 옵션으로 네이티브 엔진 다운로드를 생략할 수 있습니다. 이 경우 해당 엔진의 실제 변환은 동작하지 않습니다. [개발 안내](docs/DEVELOPMENT.md)를 참고하세요.
 
 ## 사용법
+
+0.3.0의 새 기능은 상단 **스마트** 버튼에서 엽니다. [스마트 기능 사용법·검증·제한](docs/SMART-FEATURES.md)을 확인하세요. 로컬 AI 모델 포함으로 설치 파일 크기가 커졌습니다.
 
 1. 왼쪽 위 **메뉴 → 파일 추가**로 파일을 선택하거나 창에 끌어놓습니다. 자동으로 변환하고 PDF는 바로 표시합니다.
 2. 상단 탭으로 문서를 바꾸고 ×로 닫습니다. 메뉴에서 완료된 파일을 클릭해도 PDF가 표시됩니다. 실패·취소된 문서는 **재시도**할 수 있습니다.
