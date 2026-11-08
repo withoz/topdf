@@ -154,8 +154,15 @@ def groups(page, pdf_page, geometry):
         rgba=[ctypes.c_uint() for _ in range(4)]
         ok=pdfium.raw.FPDFPageObj_GetFillColor(run[0]['obj'],*[ctypes.byref(v) for v in rgba])
         color=('#%02X%02X%02X'%tuple(v.value for v in rgba[:3])) if ok else '#111111'
+        # Public caret stops come from PDF glyph origins, not substitute UI font metrics.
+        carets=[]
+        for glyph in glyphs:
+            point=display(glyph['x'],glyph['y'])
+            carets.extend([list(point)]*(len(glyph['char'].encode('utf-16-le'))//2))
+        last=glyphs[-1]
+        carets.append(list(display(last['x']+last['a']*last['width'],last['y']+last['b']*last['width'])))
         output.append(dict(id=hashlib.sha256('|'.join(paths).encode()).hexdigest()[:24],text=text,paths=paths,x=x,y=y,width=w,height=h,
-                           editX=center[0]-ew/2,editY=center[1]-eh/2,editWidth=ew,editHeight=eh,fontSize=size,color=color,rotation=pdf_page.rotation%360,baselineX=baseline[0],baselineY=baseline[1],fontFamily=__import__('pdf_typography').name(first['font']),_glyphs=glyphs))
+                           editX=center[0]-ew/2,editY=center[1]-eh/2,editWidth=ew,editHeight=eh,fontSize=size,color=color,rotation=pdf_page.rotation%360,baselineX=baseline[0],baselineY=baseline[1],fontFamily=__import__('pdf_typography').name(first['font']),caretStops=carets,textStrokeWidth=first['pen']*math.hypot(first['a'],first['b'])*unit,textRenderMode=first['mode'],_glyphs=glyphs))
     return output
 
 

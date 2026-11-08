@@ -55,6 +55,26 @@ def installed_font(family):
         except Exception:continue
     _installed[key]=target;return target
 
+
+def register_original_font(full_font):
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    alias='TOPDFOriginal'+hashlib.sha256(str(full_font).encode()).hexdigest()[:12]
+    if alias not in pdfmetrics.getRegisteredFontNames():
+        # Legacy Korean fonts also ship Johab cmaps. ReportLab otherwise
+        # selects the last Windows cmap even when it is not Unicode.
+        from fontTools.ttLib import TTFont as FontToolsFont
+        with FontToolsFont(full_font,fontNumber=0) as unicode_font:
+            unicode_font['cmap'].tables=[t for t in unicode_font['cmap'].tables if t.isUnicode()]
+            if not unicode_font['cmap'].tables:raise ValueError('원본 글꼴의 유니코드 문자표가 없습니다.')
+            # Some Korean faces use a Unicode PostScript name. ReportLab
+            # requires ASCII here; change only the in-memory embed name.
+            for entry in unicode_font['name'].names:
+                if entry.nameID==6:entry.string=alias.encode(entry.getEncoding())
+            font_data=io.BytesIO();unicode_font.save(font_data);font_data.seek(0)
+        pdfmetrics.registerFont(TTFont(alias,font_data))
+    return alias
+
 def preserved_page(source,groups,by_path,elements,pdf_page,geometry,rotation=0):
     """Remove only selected text-show operations; leave all other PDF operators intact."""
     reader=PdfReader(source);page=reader.pages[0];content=ContentStream(page.get_contents(),reader)
@@ -143,9 +163,7 @@ def preserved_page(source,groups,by_path,elements,pdf_page,geometry,rotation=0):
                 full_font=installed_font(old['font'])
                 if full_font is None:raise ValueError('원본 글꼴에 없는 글자입니다. 같은 글꼴을 설치해야 모양을 유지할 수 있습니다: '+ch)
                 from reportlab.pdfbase import pdfmetrics
-                from reportlab.pdfbase.ttfonts import TTFont
-                alias='TOPDFOriginal'+hashlib.sha256(str(full_font).encode()).hexdigest()[:12]
-                if alias not in pdfmetrics.getRegisteredFontNames():pdfmetrics.registerFont(TTFont(alias,str(full_font),subfontIndex=0))
+                alias=register_original_font(full_font)
                 if ord(ch) not in pdfmetrics.getFont(alias).face.charToGlyph:raise ValueError('같은 글꼴에서 지원하지 않는 글자입니다: '+ch)
                 raw_width=pdfmetrics.stringWidth(ch,alias,old['size']);advance=math.hypot(old['a'],old['b'])*raw_width+(old_advance-old_width)
             else:

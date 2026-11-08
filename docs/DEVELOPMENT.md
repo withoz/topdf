@@ -33,3 +33,9 @@ GitHub Actions는 Windows에서 XLS 번들 빌드, .NET 빌드 및 `ExportSmoke`
 ## 개인정보
 
 버그 재현에는 실제 고객 문서를 사용하지 마세요. 출력 경로·본문·파일명·금액이 로그에 남을 수 있습니다. 개인 회귀 시험 스크립트와 보고서는 공개 저장소에서 제외합니다.
+
+## 0.3.10 편집기 종합 검사
+
+`pwsh -NoProfile -File scripts/Test-EditorAudit.ps1 -IncludeUi`로 합성 자료 기반 검사를 재실행합니다. 설치된 Windows 글꼴과 `.local/python-embed/runtime`, 개발용 Python의 PyMuPDF/Pillow/pypdf가 필요합니다. UI 검사는 데스크톱 세션에서 순차 실행합니다. 결과는 `artifacts/audit-0.3.10/results.json`과 각 로그에 보관합니다.
+
+전체 기능의 코드 연결과 복구 기준은 [구현 현황](IMPLEMENTATION-STATUS-0.3.10.md)을 참조하세요.

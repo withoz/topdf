@@ -19,6 +19,7 @@ public partial class PdfEditorView
     }
     async void QueueInlinePreview()
     {
+        DrawLiveText();
         inlinePreview?.Cancel();inlinePreview?.Dispose();
         if(selectedSource==null||inlineText==null||Page==null)return;
         inlinePreview=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=inlinePreview.Token;
@@ -31,7 +32,9 @@ public partial class PdfEditorView
             if(layout.PreserveSourceStyle)image=await PdfEditService.RenderAsync(snapshot,work,page.SourceIndex,page.Rotation,token,copy);
             else {var exported=await PdfEditService.ExportAsync(snapshot,work,copy,token);image=await PdfEditService.RenderAsync(exported,work,EditPages.SelectedIndex,0,token);}
             if(token.IsCancellationRequested||version!=renderVersion||selectedSource?.Id!=source.Id||inlineText?.Text!=text)return;
-            EditPageImage.Source=LoadImage(image);
+            var exact=LoadImage(image);AcceptExactInlinePreview(text,exact);
+            EditPageImage.Source=exact;
+            await UpdatePdfCaretsAsync(image,text,source.Id,token);
         } catch(OperationCanceledException){} catch(Exception ex){if(!token.IsCancellationRequested){EditStatus.Visibility=Visibility.Visible;EditStatus.Text=ex.Message;}}
     }
 }

@@ -28,6 +28,45 @@ internal static class DrawingUiTest
                 }
                 Check(view.CurrentPlan.Pages[0].Elements.Count==8,"All drawing tools");
                 Check(view.RibbonButtons.Single(x=>x.IsChecked==true).Tag.ToString()=="12","Ribbon selection follows tool");
+                Check(view.CurrentPlan.Pages[0].Elements.All(x=>x.Color=="#FF6500"),"Orange default for new annotations");
+                tool.SelectedIndex=1;
+                Call(view,"BeginAreaSelection",new Point(35,65),System.Windows.Input.ModifierKeys.None);Call(view,"UpdateAreaSelection",new Point(265,200));Call(view,"FinishAreaSelection",false);
+                var areaSelection=(HashSet<string>)typeof(PdfEditorView).GetField("selectedIds",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(view)!;
+                Check(areaSelection.Count==2,"Drag area selects multiple annotations");
+                var selectedBefore=view.CurrentPlan.Pages[0].Elements.Where(x=>areaSelection.Contains(x.Id)).ToArray();
+                Call(view,"NudgeSelection",4.0,6.0);
+                Check(view.CurrentPlan.Pages[0].Elements.Where(x=>areaSelection.Contains(x.Id)).All(x=>Math.Abs(x.X-selectedBefore.Single(y=>y.Id==x.Id).X-4)<.01),"Selected group moves together");view.Undo();
+                Call(view,"BeginAreaSelection",new Point(0,0),System.Windows.Input.ModifierKeys.Shift);Call(view,"UpdateAreaSelection",new Point(300,650));Call(view,"FinishAreaSelection",false);Check(areaSelection.Count==8,"Shift adds area to selection");
+                Call(view,"BeginAreaSelection",new Point(0,0),System.Windows.Input.ModifierKeys.Control);Call(view,"UpdateAreaSelection",new Point(300,650));Call(view,"FinishAreaSelection",false);Check(areaSelection.Count==0,"Ctrl toggles selected area");
+                Call(view,"BeginAreaSelection",new Point(0,0),System.Windows.Input.ModifierKeys.None);Call(view,"UpdateAreaSelection",new Point(300,650));Call(view,"FinishAreaSelection",true);Check(areaSelection.Count==0,"Canceled marquee restores previous selection");
+                tool.SelectedIndex=6;
+                foreach(var offset in new[]{new Point(0,0),new Point(.4,.3),new Point(1,1)}){
+                    Call(view,"BeginGraphic",new Point(60,60));Call(view,"UpdateGraphic",new Point(60+offset.X,60+offset.Y));Call(view,"EndGraphic");
+                    Check(view.CurrentPlan.Pages[0].Elements.Count==8,"Click and mouse jitter do not create arrowheads");
+                }
+                tool.SelectedIndex=12;
+                Call(view,"BeginGraphic",new Point(60,60));Call(view,"UpdateGraphic",new Point(180,150));
+                var escape=new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,PresentationSource.FromVisual(window),0,System.Windows.Input.Key.Escape){RoutedEvent=System.Windows.Input.Keyboard.PreviewKeyDownEvent};
+                Call(view,"EditorShortcuts",view,escape);
+                Check(escape.Handled&&tool.SelectedIndex==1&&view.CurrentPlan.Pages[0].Elements.Count==8,"Esc cancels unfinished stroke and selects pointer, preserving completed drawings");
+                tool.SelectedIndex=6;Call(view,"EditorShortcuts",view,escape);Check(tool.SelectedIndex==1&&view.CurrentPlan.Pages[0].Elements.Count==8,"Esc leaves drawing tool without deleting completed annotations");
+                var endpointCanvas=(Canvas)view.FindName("EditCanvas");
+                var arrow=view.CurrentPlan.Pages[0].Elements.Single(x=>x.Kind=="arrow");
+                typeof(PdfEditorView).GetField("selectedId",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(view,arrow.Id);Call(view,"DrawElements");
+                Call(view,"RotateObjects",view,new RoutedEventArgs());
+                var model=(PdfEditPlan)typeof(PdfEditorView).GetField("plan",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(view)!;
+                var activeArrow=model.Pages[0].Elements.Single(x=>x.Id==arrow.Id);var originalEnds=(Point[])Call(view,"GraphicEndpoints",activeArrow)!;
+                var ends=endpointCanvas.Children.OfType<Thumb>().Where(x=>(x.Tag as string)=="endpoint").ToArray();Check(ends.Length==2,"Arrow has two endpoint handles");
+                ends[1].RaiseEvent(new DragStartedEventArgs(0,0){RoutedEvent=Thumb.DragStartedEvent});
+                ends[1].RaiseEvent(new DragDeltaEventArgs(-35,25){RoutedEvent=Thumb.DragDeltaEvent});
+                var editedEnds=(Point[])Call(view,"GraphicEndpoints",activeArrow)!;
+                Check((editedEnds[0]-originalEnds[0]).Length<.01&&(editedEnds[1]-(originalEnds[1]+new Vector(-35,25))).Length<.01,"Rotated arrow endpoint follows drag; opposite end fixed");
+                ends[1].RaiseEvent(new DragCompletedEventArgs(-35,25,false){RoutedEvent=Thumb.DragCompletedEvent});
+                view.Undo();view.Redo();
+                typeof(PdfEditorView).GetField("selectedId",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(view,view.CurrentPlan.Pages[0].Elements.Last().Id);Call(view,"DrawElements");
+                var countBeforeDelete=view.CurrentPlan.Pages[0].Elements.Count;
+                Call(view,"DeleteElement",view,new RoutedEventArgs());Check(view.CurrentPlan.Pages[0].Elements.Count==countBeforeDelete-1,"Selected graphic deletes");
+                view.Undo();Check(view.CurrentPlan.Pages[0].Elements.Count==countBeforeDelete,"Delete undo restores graphic");
                 var palette=(System.Windows.Controls.Primitives.UniformGrid)view.FindName("PenPalette");Check(palette.Children.Count==30,"Palette colors");
                 palette.Children.OfType<RadioButton>().Single(x=>(string)x.Tag=="#1755B5").IsChecked=true;((Slider)view.FindName("PenWidthSlider")).Value=3.5;
                 Check(view.CurrentPlan.Pages[0].Elements.Last().Color=="#1755B5" && view.CurrentPlan.Pages[0].Elements.Last().StrokeWidth==3.5,"Palette style applied");
@@ -37,12 +76,23 @@ internal static class DrawingUiTest
                 var paletteEncoder=new PngBitmapEncoder();paletteEncoder.Frames.Add(BitmapFrame.Create(paletteBitmap));Directory.CreateDirectory("artifacts/drawing-test");using(var file=File.Create("artifacts/drawing-test/palette.png"))paletteEncoder.Save(file);
                 ((System.Windows.Controls.Primitives.ToggleButton)view.FindName("PenOptions")).IsChecked=false;
                 Check(view.CurrentPlan.Pages[0].Elements.All(x=>x.Points.All(p=>p.All(v=>v>=0&&v<=1))),"Normalized points");
+                tool.SelectedIndex=3;
+                var noteCanvas=(Canvas)view.FindName("EditCanvas");
+                var press=new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0,System.Windows.Input.MouseButton.Left){RoutedEvent=System.Windows.Input.Mouse.MouseDownEvent};
+                Call(view,"PageMouseDown",noteCanvas,press);Check(press.Handled&&tool.SelectedIndex==1,"Memo click handled and returns to selection");
+                Call(view,"PageMouseUp",noteCanvas,new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0,System.Windows.Input.MouseButton.Left));
+                await Task.Delay(200);
+                Check(noteCanvas.Children.OfType<TextBox>().Single().IsKeyboardFocusWithin,"Memo input survives mouse-up and keeps keyboard focus");
+                var memo=((Canvas)view.FindName("EditCanvas")).Children.OfType<TextBox>().Single();memo.Text="검토 메모\n치수와 출입구 확인";
+                ((Action)typeof(PdfEditorView).GetField("addedTextCommit",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(view)!)();
+                Check(view.CurrentPlan.Pages[0].Elements.Single(x=>x.Kind=="note").Text.Contains("치수와 출입구"),"Direct Korean multiline memo retained");
+                view.Undo();view.Redo();Check(view.CurrentPlan.Pages[0].Elements.Single(x=>x.Kind=="note").Text.Contains("검토 메모"),"Memo undo redo");
                 view.AddText(280,220,"직접 수정 · 가운데 정렬");
                 ((ComboBox)view.FindName("TextFont")).SelectedIndex=2;((ComboBox)view.FindName("TextAlign")).SelectedIndex=1;
                 Call(view,"ApplyStyle",view,new RoutedEventArgs());
                 var selected=(HashSet<string>)typeof(PdfEditorView).GetField("selectedIds",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(view)!;
                 selected.UnionWith(view.CurrentPlan.Pages[0].Elements.Where(x=>x.Kind=="rectangle"||x.Kind=="ellipse").Select(x=>x.Id));
-                view.CopyObjects();view.PasteObjects();Check(view.CurrentPlan.Pages[0].Elements.Count==12,"Group copy paste");
+                view.CopyObjects();view.PasteObjects();Check(view.CurrentPlan.Pages[0].Elements.Count==13,"Group copy paste");
                 Call(view,"RotateObjects",view,new RoutedEventArgs());
                 view.Undo();view.Redo();view.Undo();
                 var canvas=(Canvas)view.FindName("EditCanvas");var thumb=canvas.Children.OfType<Thumb>().Single();
@@ -61,11 +111,11 @@ internal static class DrawingUiTest
                 window.UpdateLayout();var bitmap=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(window);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using(var stream=File.Create(Path.Combine(folder,"editor.png")))encoder.Save(stream);
                 var output=Path.Combine(folder,id+".pdf");await view.SaveCopyAsync(output);Check(original.SequenceEqual(SHA256.HashData(File.ReadAllBytes(input))),"Original preserved");
                 // Constructor entry path allows opening a project from the main file menu.
-                var second=new PdfEditorWindow(project);second.Show();await second.Ready.WaitAsync(TimeSpan.FromSeconds(90));Check(second.CurrentPlan.Pages[0].Elements.Count==12,"Project direct open");second.Close();
-                var main=new MainWindow();main.Show();await main.OpenFilesAsync([project]);Check(main.ActivePdfEditor?.CurrentPlan.Pages[0].Elements.Count==12,"Main file menu project route");main.Close();
+                var second=new PdfEditorWindow(project);second.Show();await second.Ready.WaitAsync(TimeSpan.FromSeconds(90));Check(second.CurrentPlan.Pages[0].Elements.Count==13,"Project direct open");second.Close();
+                var main=new MainWindow();main.Show();await main.OpenFilesAsync([project]);Check(main.ActivePdfEditor?.CurrentPlan.Pages[0].Elements.Count==13,"Main file menu project route");main.Close();
                 Console.WriteLine("PASS drawings: eight tools, normalized gestures, font/alignment, group copy/paste, rotation, resize handle, z-order, undo/redo, zoom, editable project round trip/direct open, PDF export, original preserved. "+output);result=0;
             }catch(Exception ex){Console.Error.WriteLine(ex);}
-            finally{typeof(PdfEditorView).GetField("dirty",BindingFlags.NonPublic|BindingFlags.Instance)!.SetValue(window.View,false);window.Close();app.Shutdown();}
+            finally{typeof(PdfEditorView).GetField("addedTextCommit",BindingFlags.NonPublic|BindingFlags.Instance)!.SetValue(window.View,null);typeof(PdfEditorView).GetField("dirty",BindingFlags.NonPublic|BindingFlags.Instance)!.SetValue(window.View,false);window.Close();app.Shutdown();}
         };app.Run();return result;
     }
 }

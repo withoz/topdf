@@ -61,11 +61,29 @@ public partial class PdfEditorView
         if(drawing==null)return false;if(e.LeftButton!=MouseButtonState.Pressed)return true;
         UpdateGraphic(e.GetPosition(EditCanvas));return true;
     }
+    bool HasDrawingGesture(PdfEditElement item)
+    {
+        if(item.Points.Count<2)return false;
+        var zoom=EditSurface.LayoutTransform is ScaleTransform scale?Math.Max(.1,Math.Min(Math.Abs(scale.ScaleX),Math.Abs(scale.ScaleY))):1;
+        var minimum=Math.Max(6,Math.Max(SystemParameters.MinimumHorizontalDragDistance,SystemParameters.MinimumVerticalDragDistance))/zoom;
+        var points=item.Points;
+        var w=points.Max(p=>p[0])-points.Min(p=>p[0]);var h=points.Max(p=>p[1])-points.Min(p=>p[1]);
+        return item.Kind is "rectangle" or "ellipse" or "highlight" ? w>=minimum&&h>=minimum : w*w+h*h>=minimum*minimum;
+    }
+    void DiscardGraphic()
+    {
+        if(drawing==null)return;
+        Page?.Elements.Remove(drawing);drawing=null;
+        selectedId=drawingBefore?.Selected??"";selectedIds.Clear();
+        if(drawingBefore!=null)selectedIds.UnionWith(drawingBefore.Selection);
+        drawingBefore=null;EditCanvas.ReleaseMouseCapture();DrawElements();
+    }
     void UpdateGraphic(Point p)
     {
         if(drawing==null)return;var size=SizeOfPage();p.X=Math.Clamp(p.X,0,size.W);p.Y=Math.Clamp(p.Y,0,size.H);
         if(drawing.Kind=="freehand") {if(drawing.Points.Count<10000)drawing.Points.Add(new[]{p.X,p.Y});} else drawing.Points=[new[]{drawingStart.X,drawingStart.Y},new[]{p.X,p.Y}];
         if(drawing.Kind is "underline" or "strikeout") { var y=drawingStart.Y; drawing.Points=[new[]{drawingStart.X,y},new[]{p.X,y}]; }
+        if(!HasDrawingGesture(drawing))return;
         // Absolute gesture points remain separate until mouse-up; preview uses a normalized copy.
         var pts=drawing.Points;drawing.X=pts.Min(v=>v[0]);drawing.Y=pts.Min(v=>v[1]);drawing.Width=Math.Max(1,pts.Max(v=>v[0])-drawing.X);drawing.Height=Math.Max(1,pts.Max(v=>v[1])-drawing.Y);
         if(drawing.Kind is "line" or "arrow" or "underline" or "strikeout") {
@@ -75,27 +93,36 @@ public partial class PdfEditorView
         }
         drawing.Points=pts.Select(v=>new[]{(v[0]-drawing.X)/drawing.Width,(v[1]-drawing.Y)/drawing.Height}).ToList();DrawElements();drawing.Points=pts;
     }
+    void StopDrawingAndSelect()
+    {
+        if(saving||changingView)return;
+        DiscardGraphic();
+        DrawingToolsButton.IsChecked=MarkupToolsButton.IsChecked=PenOptions.IsChecked=false;
+        EditTool.SelectedIndex=1;DrawElements();Keyboard.Focus(EditCanvas);
+    }
     bool EndGraphic()
     {
         if(drawing==null)return false;
-        if(drawing.Points.Count==1) {Page!.Elements.Remove(drawing);drawing=null;drawingBefore=null;EditCanvas.ReleaseMouseCapture();DrawElements();return true;}
+        if(!HasDrawingGesture(drawing)) {DiscardGraphic();return true;}
         drawing.Points=drawing.Points.Select(v=>new[]{Math.Clamp((v[0]-drawing.X)/drawing.Width,0,1),Math.Clamp((v[1]-drawing.Y)/drawing.Height,0,1)}).ToList();
         var before=drawingBefore!;drawing=null;drawingBefore=null;EditCanvas.ReleaseMouseCapture();Commit(before);return true;
     }
     Action? addedTextCommit;
-    void CanvasCaptureLost(object sender,MouseEventArgs e){if(drawing!=null)EndGraphic();FinishObjectDrag();}
+    void CanvasCaptureLost(object sender,MouseEventArgs e){if(FinishAreaSelection(true))return;if(drawing!=null)EndGraphic();FinishObjectDrag();}
     void BeginAddedText()
     {
         if(Selected is not {} item)return;DrawElements();
-        var box=new TextBox {MaxLength=5000,Text=item.Text,Width=item.Width,Height=item.Height,FontFamily=new FontFamily(item.FontFamily),TextAlignment=AlignmentOf(item),Foreground=(Brush)new BrushConverter().ConvertFromString(item.Color)!,RenderTransformOrigin=new Point(.5,.5),RenderTransform=new RotateTransform(item.Rotation),FontSize=item.FontSize,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap};
-        Canvas.SetLeft(box,item.X);Canvas.SetTop(box,item.Y);EditCanvas.Children.Add(box);box.Focus();box.SelectAll();
+        var box=new TextBox {MaxLength=5000,Text=item.Text,Width=item.Width,Height=item.Height,FontFamily=new FontFamily(item.FontFamily),TextAlignment=AlignmentOf(item),Background=item.Kind=="note"?new SolidColorBrush(Color.FromRgb(255,243,175)):Brushes.White,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(1),Padding=new Thickness(item.Kind=="note"?7:1),VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Foreground=(Brush)new BrushConverter().ConvertFromString(item.Color)!,RenderTransformOrigin=new Point(.5,.5),RenderTransform=new RotateTransform(item.Rotation),FontSize=item.FontSize,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap};
+        Canvas.SetLeft(box,item.X);Canvas.SetTop(box,item.Y);EditCanvas.Children.Add(box);
         var done=false;void Finish(){if(done)return;done=true;addedTextCommit=null;var before=Capture();item.Text=string.IsNullOrWhiteSpace(box.Text)?"텍스트":box.Text;EditText.Text=item.Text;item.Height=Math.Min(SizeOfPage().H,TextHeight(item));Clamp(item);Commit(before);}
         addedTextCommit=Finish;
-        box.LostKeyboardFocus+=(_,_)=>Finish();box.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Enter && Keyboard.Modifiers!=ModifierKeys.Shift){Finish();e.Handled=true;}};
+        box.LostKeyboardFocus+=(_,_)=>Finish();box.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Enter && (item.Kind=="note"?Keyboard.Modifiers.HasFlag(ModifierKeys.Control):Keyboard.Modifiers!=ModifierKeys.Shift)){Finish();e.Handled=true;}};
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,new Action(()=>{if(!done&&EditCanvas.Children.Contains(box)){box.Focus();Keyboard.Focus(box);box.SelectAll();}}));
     }
     void DrawResizeHandle()
     {
         var items=Objects();if(items.Count==0 || drawing!=null)return;
+        if(items.Count==1 && items[0].Kind is "line" or "arrow" or "underline" or "strikeout" && items[0].Points.Count==2){DrawEndpointHandles(items[0]);return;}
         var right=items.Max(x=>x.X+x.Width);var bottom=items.Max(x=>x.Y+x.Height);
         var thumb=new System.Windows.Controls.Primitives.Thumb {Width=10,Height=10,Background=Brushes.DodgerBlue,Cursor=Cursors.SizeNWSE};
         Canvas.SetLeft(thumb,right-5);Canvas.SetTop(thumb,bottom-5);EditCanvas.Children.Add(thumb);

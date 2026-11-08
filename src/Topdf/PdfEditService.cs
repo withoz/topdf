@@ -6,7 +6,7 @@ namespace Topdf;
 
 public sealed record PdfEditPageInfo(int SourceIndex, double Width, double Height);
 public sealed record PdfEditInfo(string SourceSha256, PdfEditPageInfo[] Pages);
-public sealed record PdfSourceText(string Id, string Text, double X, double Y, double Width, double Height, double EditX, double EditY, double EditWidth, double EditHeight, double FontSize, string Color, int Rotation, double BaselineX=0, double BaselineY=0, string FontFamily="Malgun Gothic");
+public sealed record PdfSourceText(string Id, string Text, double X, double Y, double Width, double Height, double EditX, double EditY, double EditWidth, double EditHeight, double FontSize, string Color, int Rotation, double BaselineX=0, double BaselineY=0, string FontFamily="Malgun Gothic", double[][]? CaretStops=null, double TextStrokeWidth=0, int TextRenderMode=0);
 public sealed class PdfEditElement
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -96,7 +96,7 @@ public static class PdfEditService
     }
     static async Task RunAsync(string[] arguments, CancellationToken cancellation)
     {
-        var info = new ProcessStartInfo(AppPaths.Python) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        var info = new ProcessStartInfo(AppPaths.Python) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding=System.Text.Encoding.UTF8, StandardErrorEncoding=System.Text.Encoding.UTF8 };
         info.Environment["PYTHONUTF8"] = "1";
         info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "engines", "pdf_edit.py"));
         foreach (var value in arguments) info.ArgumentList.Add(value);

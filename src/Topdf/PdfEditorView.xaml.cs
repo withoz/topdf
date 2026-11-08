@@ -175,7 +175,7 @@ public partial class PdfEditorView : UserControl
         if (width < 30 || size.H < 35) { EditStatus.Text = "페이지가 너무 작아 항목을 추가할 수 없습니다."; return; }
         var element = new PdfEditElement { Kind = note ? "note" : "text", Text = text, X = x, Y = y, Width = width, FontSize = FontSizeValue, Color = ColorValue };
         SetObjectStyle(element); element.Height = Math.Min(size.H-6, TextHeight(element));
-        Clamp(element); var before = Capture(); Page.Elements.Add(element); selectedId = element.Id; Commit(before);
+        Clamp(element); var before = Capture();selectedIds.Clear();selectedSource=null; Page.Elements.Add(element); selectedId = element.Id; Commit(before);
     }
     double TextHeight(PdfEditElement element)
     {
@@ -188,8 +188,9 @@ public partial class PdfEditorView : UserControl
     {
         if (!EditCanvas.IsEnabled || saving || Page == null) return;
         var point = e.GetPosition(EditCanvas);
+        if(Tool=="선택"){BeginAreaSelection(point,Keyboard.Modifiers);e.Handled=true;return;}
         if (BeginGraphic(point)) { e.Handled = true; return; }
-        if (Tool is "글자" or "메모") { AddText(point.X, point.Y, string.IsNullOrWhiteSpace(EditText.Text) ? "텍스트" : EditText.Text, Tool == "메모"); BeginAddedText(); }
+        if (Tool is "글자" or "메모") { AddText(point.X, point.Y, Tool=="메모"?"메모":"텍스트", Tool == "메모");EditTool.SelectedIndex=1; BeginAddedText();e.Handled=true;return; }
         else if (Tool == "도장") {
             if (stamp == null) { EditStatus.Text = "도장 이미지를 먼저 선택하세요."; return; }
             var image = LoadImage(stamp); var size = SizeOfPage();
@@ -202,10 +203,13 @@ public partial class PdfEditorView : UserControl
     }
     void ElementMouseDown(object sender, MouseButtonEventArgs e)
     {
+        if(sender is Border {Tag:PdfEditElement {Kind:"note"} note} && Tool=="메모" && !saving){selectedId=note.Id;BeginAddedText();e.Handled=true;return;}
         if (Tool is not ("선택" or "본문") || sender is not Border { Tag: PdfEditElement item } border || saving) return;
         Keyboard.Focus(EditCanvas);
-        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) {
-            if (!selectedIds.Add(item.Id)) selectedIds.Remove(item.Id);
+        if ((Keyboard.Modifiers&(ModifierKeys.Control|ModifierKeys.Shift))!=0) {
+            selectedSource=null;
+            if(!string.IsNullOrEmpty(selectedId))selectedIds.Add(selectedId);
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){if(!selectedIds.Add(item.Id))selectedIds.Remove(item.Id);}else selectedIds.Add(item.Id);
             selectedId = selectedIds.FirstOrDefault() ?? ""; DrawElements(); e.Handled=true; return;
         }
         if (!selectedIds.Contains(item.Id)) { selectedIds.Clear(); selectedIds.Add(item.Id); }
@@ -222,6 +226,7 @@ public partial class PdfEditorView : UserControl
     }
     void PageMouseMove(object sender, MouseEventArgs e)
     {
+        if(selectionBox!=null){UpdateAreaSelection(e.GetPosition(EditCanvas));e.Handled=true;return;}
         if (MoveGraphic(e)) return;
         if (dragging == null || e.LeftButton != MouseButtonState.Pressed) return;
         var point = e.GetPosition(EditCanvas);var items=Objects();var size=SizeOfPage();
@@ -235,6 +240,7 @@ public partial class PdfEditorView : UserControl
     }
     void PageMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if(FinishAreaSelection()){e.Handled=true;return;}
         if (EndGraphic()) return;
         FinishObjectDrag();
     }
@@ -242,7 +248,9 @@ public partial class PdfEditorView : UserControl
     {
         if(dragging==null)return;var item=dragging;var before=dragBefore;
         dragging=null;dragVisual=null;dragBefore=null;EditCanvas.ReleaseMouseCapture();
-        if(Math.Abs(item.X-dragX)+Math.Abs(item.Y-dragY)>.1 && before!=null)Commit(before);
+        var moved=Math.Abs(item.X-dragX)+Math.Abs(item.Y-dragY)>.1;
+        if(moved && before!=null)Commit(before);
+        if(!moved && item.Kind=="note" && Objects().Count==1){selectedId=item.Id;BeginAddedText();return;}
         DrawElements();
     }
     void ApplySelectedText(object sender, RoutedEventArgs e)
@@ -250,7 +258,7 @@ public partial class PdfEditorView : UserControl
         if (selectedSource != null) { ReplaceSourceText(selectedSource.Id, EditText.Text); return; }
         if (Selected is not { Kind: "text" or "note" or "replace" } item || (Selected.Kind != "replace" && string.IsNullOrWhiteSpace(EditText.Text))) return;
         var before = Capture(); item.Text = EditText.Text; item.FontSize = FontSizeValue; item.Color = ColorValue; var family=((ComboBoxItem)TextFont.SelectedItem).Content.ToString()!;if(family!=item.FontFamily)item.PreserveSourceStyle=false;item.FontFamily=family;item.Alignment=new[]{"left","center","right"}[TextAlign.SelectedIndex]; item.Height = Math.Min(SizeOfPage().H-6, TextHeight(item));
-        try { Clamp(item); Commit(before); } catch (Exception ex) { Restore(before); EditStatus.Text = ex.Message; }
+        try { KeepVisibleInlineDraft();Clamp(item); Commit(before);if(item.Kind=="replace")_ = RenderPageAsync(); } catch (Exception ex) { Restore(before); EditStatus.Text = ex.Message; }
     }
     void ChooseStamp(object sender, RoutedEventArgs e)
     {
@@ -270,7 +278,7 @@ public partial class PdfEditorView : UserControl
     }
     void ShrinkElement(object sender, RoutedEventArgs e) => ResizeElement(.8);
     void GrowElement(object sender, RoutedEventArgs e) => ResizeElement(1.25);
-    void DeleteElement(object sender, RoutedEventArgs e) { var items=Objects(); if(items.Count==0)return;var before=Capture();foreach(var item in items)Page!.Elements.Remove(item);selectedIds.Clear();selectedId="";Commit(before);if(items.Any(x=>x.Kind=="replace")) _=RenderPageAsync(); }
+    void DeleteElement(object sender, RoutedEventArgs e) { if(saving||Page==null)return;var items=Objects(); if(items.Count==0)return;var before=Capture();foreach(var item in items)Page!.Elements.Remove(item);selectedIds.Clear();selectedId="";Commit(before);if(items.Any(x=>x.Kind=="replace")) _=RenderPageAsync(); }
     public void RotateSelectedPage(int degrees)
     {
         if (Page == null || info == null || degrees % 90 != 0) return;
@@ -303,7 +311,12 @@ public partial class PdfEditorView : UserControl
     }
     void MovePageUp(object sender, RoutedEventArgs e) => MovePage(-1);
     void MovePageDown(object sender, RoutedEventArgs e) => MovePage(1);
-    void Restore(History history) { selectedIds.Clear(); selectedIds.UnionWith(history.Selection); selectedSource = null; plan = PdfEditService.Clone(history.Plan); selectedId = history.Selected; BindPages(history.Page); _ = RenderPageAsync(); }
+    void Restore(History history) {
+        var current=Page;var target=history.Plan.Pages[history.Page];
+        var render=current==null||current.SourceIndex!=target.SourceIndex||current.Rotation!=target.Rotation||System.Text.Json.JsonSerializer.Serialize(current.Elements.Where(x=>x.Kind=="replace"))!=System.Text.Json.JsonSerializer.Serialize(target.Elements.Where(x=>x.Kind=="replace"));
+        selectedIds.Clear();selectedIds.UnionWith(history.Selection);selectedSource=null;plan=PdfEditService.Clone(history.Plan);selectedId=history.Selected;BindPages(history.Page);
+        if(render)_ = RenderPageAsync();else DrawElements();
+    }
     public void Undo() { EnterEditing(); EndGraphic(); FinishObjectDrag(); if (undo.Count == 0) return; redo.Push(Capture()); Restore(undo.Pop()); dirty = !IsClean(); }
     public void Redo() { EnterEditing(); if (redo.Count == 0) return; undo.Push(Capture()); Restore(redo.Pop()); dirty = !IsClean(); }
     void UndoEdit(object sender, RoutedEventArgs e) => Undo();
@@ -312,9 +325,14 @@ public partial class PdfEditorView : UserControl
     void ApplyZoom() { var text = ((ComboBoxItem)EditZoom.SelectedItem).Content.ToString()!.TrimEnd('%'); var zoom = double.Parse(text, CultureInfo.InvariantCulture)/100; EditSurface.LayoutTransform = new ScaleTransform(zoom,zoom); }
     async void EditorShortcuts(object sender, KeyEventArgs e)
     {
+        if(e.Key==Key.Escape && FinishAreaSelection(true)){e.Handled=true;return;}
+        if(e.Key==Key.Escape && !IsViewing && EditTool.SelectedIndex>=5){e.Handled=true;StopDrawingAndSelect();return;}
         if(e.Key==Key.Escape && NativeViewingHost.Content!=null){e.Handled=true;await ReturnToViewingAsync();return;}
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.S) { SaveEditedPdf(sender, e); e.Handled = true; }
-        else if (Keyboard.FocusedElement is not TextBox) {
+        else if (Keyboard.FocusedElement is not TextBox && !IsViewing) {
+            if(saving||changingView||Page==null)return;
+            if(e.Key is Key.Left or Key.Right or Key.Up or Key.Down && !IsViewing){var step=Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)?10:1;NudgeSelection(e.Key==Key.Left?-step:e.Key==Key.Right?step:0,e.Key==Key.Up?-step:e.Key==Key.Down?step:0);e.Handled=true;return;}
+            if(Keyboard.Modifiers==ModifierKeys.Control&&e.Key==Key.D){CopyObjects();PasteObjects();e.Handled=true;return;}
             if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.A) { selectedIds.UnionWith(Page!.Elements.Select(x=>x.Id)); DrawElements(); e.Handled=true; }
             else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.C) { CopyObjects(); e.Handled=true; }
             else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.V) { PasteObjects(); e.Handled=true; }

@@ -73,6 +73,10 @@ def render(path, index, rotation, target, plan_path=None, max_size=1800):
         page = document[0 if cleaned else index]
         scale = min(2, max(160,min(1800,max_size))/max(page.get_size()))
         bitmap = page.render(scale=scale, rotation=rotation)
+        if cleaned:
+            from pdf_text_edit import groups
+            layouts=[{k:v for k,v in g.items() if not k.startswith('_')} for g in groups(page,reader.pages[index],geometry)]
+            target.with_suffix('.carets.json').write_text(json.dumps(layouts,ensure_ascii=False),encoding='utf-8')
         try: bitmap.to_pil().save(target, format='PNG')
         finally: bitmap.close(); page.close()
 

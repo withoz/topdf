@@ -28,6 +28,8 @@ internal static class UnifiedUiTest
                 editor.AddText(60,350,"통합 화면 수정 321,000원");
                 var before=System.Text.Json.JsonSerializer.Serialize(editor.CurrentPlan);
                 editor.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(editor),0,Key.Escape){RoutedEvent=Keyboard.PreviewKeyDownEvent});
+                Check(!editor.IsViewing&&((ComboBox)editor.FindName("EditTool")).SelectedIndex==1,"First Escape returns drawing tool to selection");
+                editor.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(editor),0,Key.Escape){RoutedEvent=Keyboard.PreviewKeyDownEvent});
                 await Until(()=>editor.IsViewing);Check(before==System.Text.Json.JsonSerializer.Serialize(editor.CurrentPlan),"Escape preserves plan");
                 var shown=viewer.Source!.LocalPath;Check(shown!=source&&File.Exists(shown),"Modified PDF visible before saving");
                 var texts=await PdfEditService.TextAsync(shown,Path.GetDirectoryName(shown)!,0,CancellationToken.None);Check(texts.Any(x=>x.Text.Contains("321,000")),"Native preview contains edit");

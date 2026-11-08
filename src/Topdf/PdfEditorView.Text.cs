@@ -31,7 +31,7 @@ public partial class PdfEditorView
             var item=DisplayText(original);
             var box=new Border { Width=item.Width,Height=item.Height,Background=Brushes.Transparent,Cursor=Cursors.IBeam,ToolTip="본문 수정" };
             box.MouseLeftButtonDown+=(_,e)=> {
-                if(Tool is not ("본문" or "선택") || saving) return;
+                if(Tool != "본문" || saving) return;
                 SelectSourceText(original.Id); e.Handled=true;
             };
             Canvas.SetLeft(box,item.X);Canvas.SetTop(box,item.Y);EditCanvas.Children.Add(box);
@@ -56,7 +56,7 @@ public partial class PdfEditorView
             else if(e.Key==Key.Escape) { selectedSource=null;DrawElements();e.Handled=true; }
         };
         inlineText.LostKeyboardFocus+=(_,_)=> { if(!selectingText) ApplyInlineText(); };
-        Canvas.SetLeft(inlineText,selected.EditX);Canvas.SetTop(inlineText,selected.EditY);EditCanvas.Children.Add(inlineText);
+        Canvas.SetLeft(inlineText,selected.EditX);Canvas.SetTop(inlineText,selected.EditY);EditCanvas.Children.Add(inlineText);AttachPdfCarets(selectedSource);BeginLiveText(selectedSource);
     }
     void SelectFont(double size,string color)
     {
@@ -75,7 +75,8 @@ public partial class PdfEditorView
         selectedIds.Clear(); selectedSource=SourceTextItems.Single(t=>t.Id==id);selectedId="";
         var current=EditingText(selectedSource);
         EditText.Text=Page!.Elements.FirstOrDefault(x=>x.SourceTextId==id)?.Text??selectedSource.Text;SelectFont(current.FontSize,current.Color);SelectOriginalFont(current.FontFamily);
-        DrawElements();inlineText?.Focus();inlineText?.SelectAll();
+        DrawElements();inlineText?.Focus();inlineText?.SelectAll();DrawPdfCarets();
+        if(Page.Elements.Any(x=>x.SourceTextId==id))QueueInlinePreview();
         EditStatus.Text="본문을 직접 입력한 뒤 Enter로 적용하세요. Esc는 선택 취소입니다.";
     }
     void ApplyInlineText()
@@ -94,6 +95,7 @@ public partial class PdfEditorView
         var element=ReplacementLayout(item,text,FontSizeValue,ColorValue);
         element.Kind="replace";element.PreserveSourceStyle=true;var family=((ComboBoxItem)TextFont.SelectedItem).Content.ToString()!;if(family!=item.FontFamily){element.FontFamily=family;element.PreserveSourceStyle=false;}element.SourceTextId=id;element.SourceText=original.Text;
         try { Clamp(element); } catch(Exception ex) {EditStatus.Text=ex.Message;return;}
+        KeepVisibleInlineDraft();
         var before=Capture();Page.Elements.RemoveAll(e=>e.SourceTextId==id);Page.Elements.Add(element);
         selectedSource=null;selectedId=element.Id;Commit(before);_ = RenderPageAsync();
     }
