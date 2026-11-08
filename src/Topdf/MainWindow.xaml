@@ -11,7 +11,7 @@
     <ToggleButton x:Name="MenuToggle" Content="☰ 메뉴" AutomationProperties.Name="메뉴" Padding="14,7" VerticalAlignment="Center" ToolTip="파일 목록과 기능 메뉴 (Ctrl+M)"/>
     <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,18,0" VerticalAlignment="Center"><Image Source="Assets/topdf-logo.png" Width="26" Height="26"/><TextBlock Text="TOPDF" FontSize="15" FontWeight="Bold" Foreground="#17324D" VerticalAlignment="Center" Margin="6,0,0,0"/></StackPanel>
     <TextBlock x:Name="PreviewTitle" Grid.Column="2" Text="PDF 미리보기" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Foreground="#334B63" Margin="0,0,12,0"/>
-    <StackPanel Grid.Column="3" Orientation="Horizontal"><Button Content="수정" Click="EditPdf" Padding="12,7" VerticalAlignment="Center" Margin="0,0,8,0"/><ToggleButton x:Name="SmartToggle" Content="스마트" Padding="12,7" VerticalAlignment="Center" Margin="0,0,8,0"/><Button x:Name="FullscreenButton" Content="전체 화면  F11" Click="ToggleFullscreen" Padding="12,7" VerticalAlignment="Center"/></StackPanel>
+    <StackPanel Grid.Column="3" Orientation="Horizontal"><Button x:Name="EditPdfButton" Content="수정" Click="EditPdf" Padding="12,7" VerticalAlignment="Center" Margin="0,0,8,0"/><ToggleButton x:Name="SmartToggle" Content="스마트" Padding="12,7" VerticalAlignment="Center" Margin="0,0,8,0"/><Button x:Name="FullscreenButton" Content="전체 화면  F11" Click="ToggleFullscreen" Padding="12,7" VerticalAlignment="Center"/></StackPanel>
    </Grid>
   </Border>
   <ListBox x:Name="DocumentTabs" Grid.Row="1" SelectedItem="{Binding SelectedItem, ElementName=Files, Mode=TwoWay}" BorderThickness="0" Background="#F5F7FA" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled" SelectionMode="Single">
@@ -26,6 +26,7 @@
     <TextBlock x:Name="PreviewMessage" Text="파일을 끌어놓거나 왼쪽 위 메뉴에서 파일을 추가하세요." TextAlignment="Center" TextWrapping="Wrap" Foreground="#607080" FontSize="14"/>
     <Button Content="메뉴 열기" Click="OpenMenu" Padding="24,10" HorizontalAlignment="Center" Margin="0,20,0,0"/>
    </StackPanel>
+   <ContentControl x:Name="InlineEditorHost" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
   </Grid>
   <Border Grid.Row="3" Background="#F5F7FA" BorderBrush="#DEE5ED" BorderThickness="0,1,0,0" Padding="12,6">
    <TextBlock x:Name="Summary" Text="준비" TextTrimming="CharacterEllipsis" Foreground="#607080" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>

@@ -10,7 +10,7 @@ using Microsoft.Win32;
 
 namespace Topdf;
 
-public partial class PdfEditorWindow : Window
+public partial class PdfEditorView : UserControl
 {
     readonly string input;
     readonly string suggestedName;
@@ -20,6 +20,11 @@ public partial class PdfEditorWindow : Window
     readonly Stack<History> undo = new(), redo = new();
     readonly Dictionary<string, BitmapImage> images = new();
     readonly Dictionary<string, string> renders = new();
+    readonly Dictionary<int, PdfSourceText[]> sourceTexts = new();
+    PdfSourceText? selectedSource;
+    TextBox? inlineText;
+    bool selectingText;
+
     PdfEditInfo? info;
     PdfEditPlan plan = new();
     string snapshot = "", selectedId = "";
@@ -40,19 +45,24 @@ public partial class PdfEditorWindow : Window
     PdfEditPage? Page => EditPages.SelectedItem as PdfEditPage;
     PdfEditElement? Selected => Page?.Elements.FirstOrDefault(e => e.Id == selectedId);
     double FontSizeValue => double.Parse(((ComboBoxItem)EditFontSize.SelectedItem).Content.ToString()!, CultureInfo.InvariantCulture);
-    string ColorValue => EditColor.SelectedIndex switch { 1 => "#C92127", 2 => "#1755B5", _ => "#111111" };
+    string ColorValue => (EditColor.SelectedItem as ComboBoxItem)?.Tag as string ?? EditColor.SelectedIndex switch { 1 => "#C92127", 2 => "#1755B5", _ => "#111111" };
     string Tool => ((ComboBoxItem)EditTool.SelectedItem).Content.ToString()!;
 
-    public PdfEditorWindow(string pdf, string? displayName = null)
+    public PdfEditorView(string pdf, string? displayName = null)
     {
         InitializeComponent(); input = Path.GetFullPath(pdf);
         suggestedName = Path.GetFileNameWithoutExtension(displayName ?? input) + "_수정.pdf";
-        Title = "TOPDF · PDF 수정 · " + Path.GetFileName(displayName ?? input);
+
         EnableEditing(false);
-        Loaded += async (_, _) => await InitializeAsync();
-        Closing += CheckClosing;
-        Closed += (_, _) => { lifetime.Cancel(); renderCancellation?.Cancel(); };
+        EditPages.PreviewMouseDown += (_,_) => ApplyInlineText();
+        Loaded += async (_, _) => { if (initialized) return; initialized = true; await InitializeAsync(); };
+
     }
+    bool initialized;
+    public event EventHandler? Saved;
+    Window DialogOwner => Window.GetWindow(this);
+    public void DisposeEditor() { lifetime.Cancel(); renderCancellation?.Cancel(); }
+    public bool CanClose() { var e = new CancelEventArgs(); CheckClosing(this,e); return !e.Cancel; }
     async Task InitializeAsync()
     {
         try {
@@ -67,6 +77,13 @@ public partial class PdfEditorWindow : Window
         } catch (OperationCanceledException) { ready.TrySetCanceled(); }
         catch (Exception ex) { EditStatus.Text = ex.Message; ready.TrySetException(ex); }
     }
+    void GoToPage(object sender, RoutedEventArgs e) {
+        if (saving || info == null) return;
+        ApplyInlineText();
+        if (int.TryParse(EditPageNumber.Text,out var number) && number>=1 && number<=plan.Pages.Count) { EditPages.SelectedIndex=number-1;EditPages.ScrollIntoView(EditPages.SelectedItem); }
+        else EditStatus.Text = $"1~{plan.Pages.Count} 사이의 페이지 번호를 입력하세요.";
+    }
+    void PageNumberKey(object sender, KeyEventArgs e) { if(e.Key==Key.Enter) {GoToPage(sender,e);e.Handled=true;} }
     void EnableEditing(bool enabled) { EditorTools.IsEnabled = enabled; EditorHistory.IsEnabled = enabled; EditorSave.IsEnabled = enabled; EditPages.IsEnabled = enabled; EditCanvas.IsEnabled = enabled; }
     (double W, double H) SizeOfPage()
     {
@@ -78,20 +95,23 @@ public partial class PdfEditorWindow : Window
         updating = true; EditPages.ItemsSource = null; EditPages.ItemsSource = plan.Pages;
         EditPages.SelectedIndex = Math.Clamp(index, 0, plan.Pages.Count-1); updating = false;
     }
-    async void EditorPageChanged(object sender, SelectionChangedEventArgs e) { if (!updating && info != null) { selectedId = ""; await RenderPageAsync(); } }
+    async void EditorPageChanged(object sender, SelectionChangedEventArgs e) { if (!updating && info != null) { selectedId = ""; selectedSource = null; await RenderPageAsync(); } }
     async Task RenderPageAsync()
     {
         if (Page == null || info == null) return;
         var page = Page; var version = ++renderVersion;
+        EditPageNumber.Text = (EditPages.SelectedIndex+1).ToString();
         renderCancellation?.Cancel(); renderCancellation?.Dispose();
         renderCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var token = renderCancellation.Token;
         EditSurface.Visibility = Visibility.Hidden; EditCanvas.IsEnabled = false;
         EditStatus.Text = "페이지를 불러오고 있습니다…";
         try {
-            var key = $"{page.SourceIndex}:{page.Rotation}";
+            if (!sourceTexts.ContainsKey(page.SourceIndex)) sourceTexts[page.SourceIndex] = await PdfEditService.TextAsync(snapshot, work, page.SourceIndex, token);
+            var replacements = string.Join(",",page.Elements.Where(e=>e.Kind=="replace").Select(e=>e.SourceTextId).Order());
+            var key = $"{page.SourceIndex}:{page.Rotation}:{replacements}";
             if (!renders.TryGetValue(key, out var image)) {
-                image = await PdfEditService.RenderAsync(snapshot, work, page.SourceIndex, page.Rotation, token);
+                image = await PdfEditService.RenderAsync(snapshot, work, page.SourceIndex, page.Rotation, token, plan);
                 renders[key] = image;
             }
             if (version != renderVersion || token.IsCancellationRequested) return;
@@ -99,7 +119,7 @@ public partial class PdfEditorWindow : Window
             EditCanvas.Width = size.W; EditCanvas.Height = size.H;
             EditPageImage.Source = LoadImage(image);
             DrawElements(); ApplyZoom(); EditSurface.Visibility = Visibility.Visible; EditCanvas.IsEnabled = !saving;
-            EditStatus.Text = $"{EditPages.SelectedIndex+1}/{plan.Pages.Count}쪽 · 클릭해 추가, '선택' 도구로 끌어 이동";
+            EditStatus.Text = sourceTexts[page.SourceIndex].Length == 0 ? $"{EditPages.SelectedIndex+1}/{plan.Pages.Count}쪽 · 선택 가능한 본문이 없습니다. 스캔·윤곽선·특수 PDF 구조는 OCR 또는 원본 수정이 필요합니다." : $"{EditPages.SelectedIndex+1}/{plan.Pages.Count}쪽 · 본문 클릭 → 직접 입력 → Enter 적용";
         } catch (OperationCanceledException) { }
         catch (Exception ex) { if (version == renderVersion) EditStatus.Text = ex.Message; }
     }
@@ -116,7 +136,8 @@ public partial class PdfEditorWindow : Window
     void Commit(History previous) { undo.Push(previous); redo.Clear(); dirty = true; DrawElements(); }
     void DrawElements()
     {
-        EditCanvas.Children.Clear(); if (Page == null) return;
+        selectingText = true; EditCanvas.Children.Clear(); inlineText = null; selectingText = false; if (Page == null) return;
+        DrawSourceTexts();
         foreach (var element in Page.Elements) {
             var padding = element.Kind == "note" ? 7.0 : 1;
             FrameworkElement content = element.Kind == "stamp" ? new Image { Source = LoadImage(element.ImagePath!), Stretch = Stretch.Fill } :
@@ -163,17 +184,16 @@ public partial class PdfEditorWindow : Window
             var item = new PdfEditElement { Kind = "stamp", ImagePath = stamp, X = point.X, Y = point.Y, Width = width, Height = height };
             if (Math.Min(width, height) <= 0) return;
             Clamp(item); var before = Capture(); Page.Elements.Add(item); selectedId = item.Id; Commit(before);
-        } else { selectedId = ""; DrawElements(); }
+        } else { selectedId = ""; selectedSource = null; DrawElements(); }
     }
     void ElementMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (Tool != "선택" || sender is not Border { Tag: PdfEditElement item } border || saving) return;
-        selectedId = item.Id; dragging = item; dragVisual = border; dragBefore = Capture();
+        if (Tool is not ("선택" or "본문") || sender is not Border { Tag: PdfEditElement item } border || saving) return;
+        selectedSource = null; selectedId = item.Id; dragging = item; dragVisual = border; dragBefore = Capture();
         dragStart = e.GetPosition(EditCanvas); dragX = item.X; dragY = item.Y;
         if (item.Kind != "stamp") {
             EditText.Text = item.Text;
-            EditFontSize.SelectedItem = EditFontSize.Items.Cast<ComboBoxItem>().FirstOrDefault(c => c.Content.ToString() == item.FontSize.ToString(CultureInfo.InvariantCulture)) ?? EditFontSize.Items[1];
-            EditColor.SelectedIndex = item.Color == "#C92127" ? 1 : item.Color == "#1755B5" ? 2 : 0;
+            SelectFont(item.FontSize,item.Color);
         }
         EditCanvas.CaptureMouse(); border.BorderThickness = new Thickness(1); e.Handled = true;
     }
@@ -192,18 +212,19 @@ public partial class PdfEditorWindow : Window
     }
     void ApplySelectedText(object sender, RoutedEventArgs e)
     {
-        if (Selected is not { Kind: not "stamp" } item || string.IsNullOrWhiteSpace(EditText.Text)) return;
+        if (selectedSource != null) { ReplaceSourceText(selectedSource.Id, EditText.Text); return; }
+        if (Selected is not { Kind: not "stamp" } item || (Selected.Kind != "replace" && string.IsNullOrWhiteSpace(EditText.Text))) return;
         var before = Capture(); item.Text = EditText.Text; item.FontSize = FontSizeValue; item.Color = ColorValue; item.Height = Math.Min(SizeOfPage().H-6, TextHeight(item));
         try { Clamp(item); Commit(before); } catch (Exception ex) { Restore(before); EditStatus.Text = ex.Message; }
     }
     void ChooseStamp(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog { Filter = "도장 이미지|*.png;*.jpg;*.jpeg" };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(DialogOwner) != true) return;
         try {
             if (new FileInfo(dialog.FileName).Length > 20_000_000) throw new IOException("도장은 20MB 이하 이미지를 선택하세요.");
             stamp = Path.Combine(work, Guid.NewGuid().ToString("N")+Path.GetExtension(dialog.FileName));
-            File.Copy(dialog.FileName, stamp, false); _ = LoadImage(stamp); EditTool.SelectedIndex = 3; EditStatus.Text = "도장을 넣을 위치를 클릭하세요.";
+            File.Copy(dialog.FileName, stamp, false); _ = LoadImage(stamp); EditTool.SelectedIndex = 4; EditStatus.Text = "도장을 넣을 위치를 클릭하세요.";
         } catch (Exception ex) { stamp = null; EditStatus.Text = ex.Message; }
     }
     void ResizeElement(double factor)
@@ -214,7 +235,7 @@ public partial class PdfEditorWindow : Window
     }
     void ShrinkElement(object sender, RoutedEventArgs e) => ResizeElement(.8);
     void GrowElement(object sender, RoutedEventArgs e) => ResizeElement(1.25);
-    void DeleteElement(object sender, RoutedEventArgs e) { if (Selected is not { } item) return; var before = Capture(); Page!.Elements.Remove(item); selectedId = ""; Commit(before); }
+    void DeleteElement(object sender, RoutedEventArgs e) { if (Selected is not { } item) return; var before = Capture(); Page!.Elements.Remove(item); selectedId = ""; Commit(before); if(item.Kind=="replace") _ = RenderPageAsync(); }
     public void RotateSelectedPage(int degrees)
     {
         if (Page == null || info == null || degrees % 90 != 0) return;
@@ -229,7 +250,7 @@ public partial class PdfEditorWindow : Window
             }
             Page.Rotation = (Page.Rotation+90)%360;
         }
-        Commit(before); _ = RenderPageAsync();
+        selectedSource = null; Commit(before); _ = RenderPageAsync();
     }
     void RotateLeft(object sender, RoutedEventArgs e) => RotateSelectedPage(-90);
     void RotateRight(object sender, RoutedEventArgs e) => RotateSelectedPage(90);
@@ -247,7 +268,7 @@ public partial class PdfEditorWindow : Window
     }
     void MovePageUp(object sender, RoutedEventArgs e) => MovePage(-1);
     void MovePageDown(object sender, RoutedEventArgs e) => MovePage(1);
-    void Restore(History history) { plan = PdfEditService.Clone(history.Plan); selectedId = history.Selected; BindPages(history.Page); _ = RenderPageAsync(); }
+    void Restore(History history) { selectedSource = null; plan = PdfEditService.Clone(history.Plan); selectedId = history.Selected; BindPages(history.Page); _ = RenderPageAsync(); }
     public void Undo() { if (undo.Count == 0) return; redo.Push(Capture()); Restore(undo.Pop()); dirty = undo.Count > 0; }
     public void Redo() { if (redo.Count == 0) return; undo.Push(Capture()); Restore(redo.Pop()); dirty = true; }
     void UndoEdit(object sender, RoutedEventArgs e) => Undo();
@@ -267,6 +288,7 @@ public partial class PdfEditorWindow : Window
     {
         if (info == null || saving) throw new InvalidOperationException("PDF를 준비한 뒤 저장하세요.");
         if (File.Exists(destination)) throw new IOException("기존 파일을 덮어쓰지 않습니다. 새 파일 이름을 선택하세요.");
+        ApplyInlineText();
         saving = true; EnableEditing(false); EditStatus.Text = "수정본을 저장하고 있습니다…";
         try {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token); timeout.CancelAfter(TimeSpan.FromMinutes(3));
@@ -275,19 +297,23 @@ public partial class PdfEditorWindow : Window
             ResultPath = destination; dirty = false; EditStatus.Text = "수정본 저장 완료 · 원본 PDF는 보존했습니다.";
         } finally { saving = false; EnableEditing(true); }
     }
+    public async Task SaveAndFinishAsync(string destination) {
+        await SaveCopyAsync(destination); Saved?.Invoke(this,EventArgs.Empty);
+    }
     async void SaveEditedPdf(object sender, RoutedEventArgs e)
     {
         if (info == null || saving) return;
         var dialog = new SaveFileDialog { Filter = "PDF|*.pdf", FileName = suggestedName, OverwritePrompt = false };
-        if (dialog.ShowDialog(this) != true) return;
-        try { await SaveCopyAsync(dialog.FileName); Close(); }
+        if (dialog.ShowDialog(DialogOwner) != true) return;
+        try { await SaveAndFinishAsync(dialog.FileName); }
         catch (Exception ex) { EditStatus.Text = ex.Message; }
     }
     void CheckClosing(object? sender, CancelEventArgs e)
     {
+        ApplyInlineText();
         if (saving) { e.Cancel = true; EditStatus.Text = "저장이 끝난 뒤 창을 닫아 주세요."; return; }
         if (!dirty) return;
-        var choice = MessageBox.Show(this, "수정 내용을 새 PDF로 저장할까요?", "PDF 수정", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        var choice = MessageBox.Show(DialogOwner, "수정 내용을 새 PDF로 저장할까요?", "PDF 수정", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         if (choice == MessageBoxResult.No) { dirty = false; return; }
         e.Cancel = true; if (choice == MessageBoxResult.Yes) SaveEditedPdf(this, new RoutedEventArgs());
     }

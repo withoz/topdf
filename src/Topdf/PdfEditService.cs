@@ -6,6 +6,7 @@ namespace Topdf;
 
 public sealed record PdfEditPageInfo(int SourceIndex, double Width, double Height);
 public sealed record PdfEditInfo(string SourceSha256, PdfEditPageInfo[] Pages);
+public sealed record PdfSourceText(string Id, string Text, double X, double Y, double Width, double Height, double EditX, double EditY, double EditWidth, double EditHeight, double FontSize, string Color, int Rotation);
 public sealed class PdfEditElement
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -19,6 +20,8 @@ public sealed class PdfEditElement
     public double FontSize { get; set; } = 14;
     public string Color { get; set; } = "#111111";
     public int Rotation { get; set; }
+    public string? SourceTextId { get; set; }
+    public string? SourceText { get; set; }
 }
 public sealed class PdfEditPage
 {
@@ -43,10 +46,22 @@ public static class PdfEditService
         await RunAsync(["inspect", source, output], cancellation);
         return JsonSerializer.Deserialize<PdfEditInfo>(await File.ReadAllTextAsync(output, cancellation), Json)!;
     }
-    public static async Task<string> RenderAsync(string source, string folder, int page, int rotation, CancellationToken cancellation)
+    public static async Task<PdfSourceText[]> TextAsync(string source, string folder, int page, CancellationToken cancellation)
+    {
+        var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".json");
+        await RunAsync(["text", source, output, "--page", page.ToString()], cancellation);
+        return JsonSerializer.Deserialize<PdfSourceText[]>(await File.ReadAllTextAsync(output, cancellation), Json)!;
+    }
+    public static async Task<string> RenderAsync(string source, string folder, int page, int rotation, CancellationToken cancellation, PdfEditPlan? plan = null)
     {
         var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".png");
-        await RunAsync(["render", source, output, "--page", page.ToString(), "--rotation", rotation.ToString()], cancellation);
+        var arguments = new List<string> { "render", source, output, "--page", page.ToString(), "--rotation", rotation.ToString() };
+        if (plan != null) {
+            var specification = Path.Combine(folder, Guid.NewGuid().ToString("N")+".json");
+            await File.WriteAllTextAsync(specification, JsonSerializer.Serialize(plan, Json), cancellation);
+            arguments.AddRange(["--plan", specification]);
+        }
+        await RunAsync(arguments.ToArray(), cancellation);
         return output;
     }
     public static async Task<string> ExportAsync(string source, string folder, PdfEditPlan plan, CancellationToken cancellation)

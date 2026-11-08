@@ -1,4 +1,4 @@
-"""Snapshot-based PDF overlay editing. Does not replace existing text or redact content."""
+"""Snapshot-based PDF overlay editing. Includes PDFium text-object replacement."""
 import argparse
 import hashlib
 import io
@@ -8,6 +8,7 @@ import re
 import sys
 from pathlib import Path
 from xml.sax.saxutils import escape
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pypdf import PdfReader, PdfWriter, Transformation
 from pypdf.generic import NameObject, DictionaryObject, ArrayObject, DecodedStreamObject
@@ -56,12 +57,20 @@ def inspect(path):
     return dict(sourceSha256=source_hash(path), pages=[dict(sourceIndex=i, width=geometry(page)[0], height=geometry(page)[1]) for i, page in enumerate(reader.pages)])
 
 
-def render(path, index, rotation, target):
+def render(path, index, rotation, target, plan_path=None):
     reader = open_source(path)
     if not 0 <= index < len(reader.pages) or rotation not in (0, 90, 180, 270): raise ValueError('잘못된 페이지 또는 회전입니다.')
     if target.exists(): raise ValueError('새 미리보기 파일을 지정하세요.')
-    with pdfium.PdfDocument(str(path)) as document:
-        page = document[index]
+    cleaned = None
+    if plan_path:
+        plan = json.loads(plan_path.read_text(encoding='utf-8-sig'))
+        if plan.get('sourceSha256') != source_hash(path): raise ValueError('원본 PDF가 변경됐습니다.')
+        specification = next((p for p in plan['pages'] if p['sourceIndex'] == index), None)
+        if specification:
+            from pdf_text_edit import cleaned_page
+            cleaned = cleaned_page(path, index, specification.get('elements', []), geometry)
+    with pdfium.PdfDocument(cleaned if cleaned else str(path)) as document:
+        page = document[0 if cleaned else index]
         scale = min(2, 1800/max(page.get_size()))
         bitmap = page.render(scale=scale, rotation=rotation)
         try: bitmap.to_pil().save(target, format='PNG')
@@ -97,8 +106,9 @@ def draw_element(canvas, element, width, height, font):
                 if image.width*image.height > 40_000_000: raise ValueError('도장 이미지 크기 한도 초과')
                 rgba = image.convert('RGBA')
                 canvas.drawImage(ImageReader(rgba), 0, 0, width=w, height=h, mask='auto')
-        elif kind in ('text', 'note'):
+        elif kind in ('text', 'note', 'replace'):
             text = element.get('text', '')
+            if kind == 'replace' and not text.strip(): return
             if not text.strip() or len(text) > 5000: raise ValueError('내용은 1~5000자로 입력하세요.')
             size = scalar(element.get('fontSize', 14))
             if not 6 <= size <= 96: raise ValueError('글자 크기는 6~96으로 지정하세요.')
@@ -131,7 +141,7 @@ def export(path, plan_path, target):
     indices = [int(p['sourceIndex']) for p in pages]
     if not indices or len(indices) != len(set(indices)) or any(i < 0 or i >= len(reader.pages) for i in indices): raise ValueError('잘못된 페이지 순서입니다.')
     if sum(len(p.get('elements', [])) for p in pages) > 5000: raise ValueError('편집 항목은 5000개까지 지원합니다.')
-    has_text = any(e['kind'] in ('text', 'note') for p in pages for e in p.get('elements', []))
+    has_text = any(e['kind'] in ('text', 'note', 'replace') for p in pages for e in p.get('elements', []))
     font = 'Helvetica'
     if has_text:
         font_path = Path(os.environ.get('WINDIR', 'C:/Windows'))/'Fonts'/'malgun.ttf'
@@ -143,6 +153,15 @@ def export(path, plan_path, target):
         rotation = int(specification.get('rotation', 0))
         if rotation not in (0, 90, 180, 270): raise ValueError('잘못된 페이지 회전입니다.')
         page = writer.pages[position]
+        from pdf_text_edit import cleaned_page
+        cleaned = cleaned_page(path, specification['sourceIndex'], specification.get('elements', []), geometry)
+        if cleaned:
+            replacement_reader = PdfReader(cleaned); overlays.append(replacement_reader)
+            replacement_page = replacement_reader.pages[0]
+            for key in ('/Contents', '/Resources'):
+                if key in replacement_page: page[NameObject(key)] = replacement_page[key].clone(writer)
+            # PDFium may put page transparency settings in the cleaned page.
+            if '/Group' in replacement_page: page[NameObject('/Group')] = replacement_page['/Group'].clone(writer)
         width, height, matrix = geometry(page, rotation)
         if rotation: page.rotate(rotation)
         elements = specification.get('elements', [])
@@ -177,13 +196,17 @@ def export(path, plan_path, target):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('operation', choices=['inspect', 'render', 'export'])
+    parser.add_argument('operation', choices=['inspect', 'render', 'text', 'export'])
     parser.add_argument('source', type=Path); parser.add_argument('output', type=Path)
     parser.add_argument('--page', type=int, default=0); parser.add_argument('--rotation', type=int, default=0)
     parser.add_argument('--plan', type=Path)
     args = parser.parse_args()
     if args.operation == 'inspect': args.output.write_text(json.dumps(inspect(args.source), ensure_ascii=False), encoding='utf-8')
-    elif args.operation == 'render': render(args.source, args.page, args.rotation, args.output)
+    elif args.operation == 'text':
+        open_source(args.source)
+        from pdf_text_edit import text_layer
+        args.output.write_text(json.dumps(text_layer(args.source, args.page, geometry), ensure_ascii=False), encoding='utf-8')
+    elif args.operation == 'render': render(args.source, args.page, args.rotation, args.output, args.plan)
     else: export(args.source, args.plan, args.output)
 
 

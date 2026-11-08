@@ -10,6 +10,7 @@ internal static class Program
     static int Main(string[] args)
     {
         Environment.SetEnvironmentVariable("TOPDF_DATA_DIR", Path.Combine(AppContext.BaseDirectory, "test-data"));
+        if(args.Length==2 && args[0]=="--inline-edit-ui") return InlinePdfEditUiTest.Run(args[1]);
         if(args.Length==2 && args[0]=="--pdf-edit-ui") return PdfEditUiTest.Run(args[1]);
         if(args.Length==2 && args[0]=="--smart-ui") return SmartUiTest.Run(args[1]);
         if(args.Length==3 && args[0]=="--auto-folder") return AutoOpenTest.Run(args[1], args[2]);

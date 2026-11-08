@@ -44,7 +44,7 @@ public partial class MainWindow : Window
     WindowState previousState;
     WindowStyle previousStyle;
     ResizeMode previousResizeMode;
-    public MainWindow() { InitializeComponent(); Files.ItemsSource = jobs; DocumentTabs.ItemsSource = jobs; Closing += (_, e) => { if (active != null) { active.Cancel(); e.Cancel = true; Summary.Text = "변환 취소 중입니다. 완료 후 창을 닫아 주세요."; } if (exporting) { e.Cancel = true; Summary.Text = "PDF 저장 중입니다. 완료 후 창을 닫아 주세요."; } }; Closed += (_, _) => { closed = true; lifetime.Cancel(); LocalAiHost.Stop(); folderAutomation?.Dispose(); previewVersion++; PdfViewer.Dispose(); }; }
+    public MainWindow() { InitializeComponent(); Files.ItemsSource = jobs; DocumentTabs.ItemsSource = jobs; Closing += (_, e) => { if (pdfEditor != null && !pdfEditor.CanClose()) { e.Cancel = true; return; } if (active != null) { active.Cancel(); e.Cancel = true; Summary.Text = "변환 취소 중입니다. 완료 후 창을 닫아 주세요."; } if (exporting) { e.Cancel = true; Summary.Text = "PDF 저장 중입니다. 완료 후 창을 닫아 주세요."; } }; Closed += (_, _) => { closed = true; pdfEditor?.DisposeEditor(); lifetime.Cancel(); LocalAiHost.Stop(); folderAutomation?.Dispose(); previewVersion++; PdfViewer.Dispose(); }; }
     public void Add(IEnumerable<string> paths)
     {
         foreach (var path in paths.Where(File.Exists))
@@ -63,6 +63,7 @@ public partial class MainWindow : Window
     void CloseMenu(object sender, RoutedEventArgs e) => SetMenuOpen(false);
     void HandleShortcuts(object sender, KeyEventArgs e)
     {
+        if (pdfEditor != null && e.Key != Key.F11) return;
         if (e.Key == Key.F11) { ToggleFullscreen(sender, e); e.Handled = true; }
         else if (e.Key == Key.M && Keyboard.Modifiers == ModifierKeys.Control) { SetMenuOpen(MenuToggle.IsChecked != true); e.Handled = true; }
         else if (e.Key == Key.Escape) {
@@ -215,6 +216,7 @@ public partial class MainWindow : Window
 
     async Task ShowPreviewAsync(FileJob? job)
     {
+        if (pdfEditor != null) return;
         var version = ++previewVersion;
         PreviewTitle.Text = job == null ? "PDF 미리보기" : job.Name;
         if (job?.Pdf == null) {
@@ -227,7 +229,7 @@ public partial class MainWindow : Window
             if (!File.Exists(path)) throw new FileNotFoundException("PDF 파일을 찾을 수 없습니다. 다시 변환해 주세요.");
             viewerInitialization ??= InitializeViewerAsync();
             await viewerInitialization;
-            if (closed || version != previewVersion) return;
+            if (closed || version != previewVersion || pdfEditor != null) return;
             allowedPreviewUri = new Uri(path).AbsoluteUri;
             PdfViewer.CoreWebView2.Navigate(allowedPreviewUri);
             PreviewMessage.Visibility = Visibility.Collapsed;
@@ -235,7 +237,7 @@ public partial class MainWindow : Window
             PdfViewer.Visibility = Visibility.Visible;
         }
         catch (Exception ex) {
-            if (closed || version != previewVersion) return;
+            if (closed || version != previewVersion || pdfEditor != null) return;
             viewerInitialization = null;
             PreviewNotice(ex is WebView2RuntimeNotFoundException
                 ? "미리보기에 Microsoft Edge WebView2 Runtime이 필요합니다. 설치 후 앱을 다시 실행하세요. 외부 앱으로 열기는 계속 사용할 수 있습니다."
