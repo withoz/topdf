@@ -32,3 +32,5 @@ tests/inspect_folder_pdfs.py
 *.user
 .vs/
 .venv/
+
+*.topdf

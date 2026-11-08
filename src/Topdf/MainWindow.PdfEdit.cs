@@ -13,8 +13,13 @@ public partial class MainWindow
             EndPdfEditing(); await ShowPreviewAsync(SelectedJob); return;
         }
         if (SelectedJob is not { Pdf: not null } job) { Summary.Text = "PDF 또는 변환이 완료된 문서를 먼저 선택하세요."; return; }
+        await StartPdfEditorAsync(job.Pdf,Path.GetFileName(job.Source));
+    }
+    async Task StartPdfEditorAsync(string source,string name)
+    {
+        if(pdfEditor!=null){if(!pdfEditor.CanClose())return;EndPdfEditing();}
         SetMenuOpen(false); SmartToggle.IsChecked = false; previewVersion++;
-        pdfEditor = new PdfEditorView(job.Pdf, Path.GetFileName(job.Source));
+        pdfEditor = new PdfEditorView(source, name);
         pdfEditor.Saved += async (_,_) => {
             var result = pdfEditor?.ResultPath;
             EndPdfEditing();

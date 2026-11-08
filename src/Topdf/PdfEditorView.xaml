@@ -2,13 +2,13 @@
  <DockPanel>
   <Border DockPanel.Dock="Top" Background="White" Padding="10" BorderBrush="#D9E0E8" BorderThickness="0,0,0,1">
    <StackPanel>
-    <DockPanel Margin="0,0,0,8">
+    <DockPanel Margin="0,0,0,4">
      <Button x:Name="EditorSave" Content="새 PDF로 저장" Click="SaveEditedPdf" DockPanel.Dock="Right" Padding="14,6"/>
      <WrapPanel x:Name="EditorTools">
-      <ComboBox x:Name="EditTool" Width="76" SelectedIndex="0" Margin="0,0,8,0"><ComboBoxItem Content="본문"/><ComboBoxItem Content="선택"/><ComboBoxItem Content="글자"/><ComboBoxItem Content="메모"/><ComboBoxItem Content="도장"/></ComboBox>
-      <TextBox x:Name="EditText" Width="220" Height="40" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" ToolTip="추가할 글자 또는 메모" Margin="0,0,6,0"/>
+      <ComboBox x:Name="EditTool" Width="100" SelectedIndex="0" Margin="0,0,8,0"><ComboBoxItem Content="본문"/><ComboBoxItem Content="선택"/><ComboBoxItem Content="글자"/><ComboBoxItem Content="메모"/><ComboBoxItem Content="도장"/><ComboBoxItem Content="선"/><ComboBoxItem Content="화살표"/><ComboBoxItem Content="사각형"/><ComboBoxItem Content="타원"/><ComboBoxItem Content="형광펜"/><ComboBoxItem Content="밑줄"/><ComboBoxItem Content="취소선"/><ComboBoxItem Content="자유곡선"/></ComboBox>
+      <TextBox x:Name="EditText" Width="160" Height="30" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" ToolTip="추가할 글자 또는 메모" Margin="0,0,6,0"/>
       <ComboBox x:Name="EditFontSize" Width="56" SelectedIndex="1" Margin="0,0,6,0"><ComboBoxItem Content="10"/><ComboBoxItem Content="14"/><ComboBoxItem Content="18"/><ComboBoxItem Content="24"/><ComboBoxItem Content="36"/><ComboBoxItem Content="48"/></ComboBox>
-      <ComboBox x:Name="EditColor" Width="60" SelectedIndex="0" Margin="0,0,6,0"><ComboBoxItem Content="검정"/><ComboBoxItem Content="빨강"/><ComboBoxItem Content="파랑"/></ComboBox>
+      <ComboBox x:Name="EditColor" Width="60" SelectedIndex="0" Margin="0,0,6,0"><ComboBoxItem Content="검정"/><ComboBoxItem Content="빨강"/><ComboBoxItem Content="파랑"/><ComboBoxItem Content="초록" Tag="#16804A"/><ComboBoxItem Content="보라" Tag="#7B3FB3"/><ComboBoxItem Content="노랑" Tag="#FFEB3B"/><ComboBoxItem Content="주황" Tag="#E77A19"/></ComboBox>
       <Button Content="내용 적용" Click="ApplySelectedText" Padding="8,5" Margin="0,0,6,0"/>
       <Button Content="도장 선택" Click="ChooseStamp" Padding="8,5" Margin="0,0,6,0"/>
       <Button Content="−" Click="ShrinkElement" Padding="8,5" ToolTip="선택 항목 축소"/>
@@ -16,7 +16,20 @@
       <Button Content="항목 삭제" Click="DeleteElement" Padding="8,5"/>
      </WrapPanel>
     </DockPanel>
+    <Expander Header="속성 · 편집 파일 · 페이지" IsExpanded="False">
     <WrapPanel x:Name="EditorHistory">
+     <Button Content="편집 저장" Click="SaveProject" Padding="8,5"/>
+     <Button Content="편집 열기" Click="OpenProject" Padding="8,5"/>
+     <ComboBox x:Name="StrokeSize" Width="45" SelectedIndex="1"><ComboBoxItem Content="1"/><ComboBoxItem Content="2"/><ComboBoxItem Content="4"/><ComboBoxItem Content="8"/></ComboBox>
+     <CheckBox x:Name="DashStroke" Content="점선" VerticalAlignment="Center" Margin="4"/>
+     <CheckBox x:Name="FillShape" Content="채움" VerticalAlignment="Center" Margin="4"/>
+     <ComboBox x:Name="TextAlign" Width="60" SelectedIndex="0"><ComboBoxItem Content="왼쪽"/><ComboBoxItem Content="가운데"/><ComboBoxItem Content="오른쪽"/></ComboBox>
+     <ComboBox x:Name="TextFont" Width="95" SelectedIndex="0"><ComboBoxItem Content="Malgun Gothic"/><ComboBoxItem Content="Gulim"/><ComboBoxItem Content="Batang"/></ComboBox>
+     <Button Content="속성 적용" Click="ApplyStyle" Padding="8,5"/>
+     <Button Content="복제" Click="DuplicateObjects" Padding="8,5"/>
+     <Button Content="회전" Click="RotateObjects" Padding="8,5"/>
+     <Button Content="맨 앞" Click="BringForward" Padding="8,5"/>
+     <Button Content="맨 뒤" Click="SendBackward" Padding="8,5"/>
      <Button Content="되돌리기" Click="UndoEdit" Padding="10,5" Margin="0,0,6,0"/>
      <Button Content="다시 실행" Click="RedoEdit" Padding="10,5" Margin="0,0,14,0"/>
      <Button Content="쪽 회전 ↶" Click="RotateLeft" Padding="10,5" Margin="0,0,6,0"/>
@@ -26,6 +39,7 @@
      <Button Content="뒤로" Click="MovePageDown" Padding="10,5" Margin="0,0,14,0"/>
      <ComboBox x:Name="EditZoom" Width="80" SelectedIndex="1" SelectionChanged="ZoomChanged"><ComboBoxItem Content="75%"/><ComboBoxItem Content="100%"/><ComboBoxItem Content="125%"/><ComboBoxItem Content="150%"/></ComboBox>
     </WrapPanel>
+    </Expander>
    </StackPanel>
   </Border>
   <TextBlock x:Name="EditStatus" DockPanel.Dock="Bottom" Padding="12,7" Text="PDF를 준비하고 있습니다…" TextWrapping="Wrap"/>
@@ -36,7 +50,7 @@
   <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Background="#68727C" Padding="20">
    <Grid x:Name="EditSurface" HorizontalAlignment="Center" VerticalAlignment="Top" Background="White">
     <Image x:Name="EditPageImage" Stretch="Fill"/>
-    <Canvas x:Name="EditCanvas" Background="Transparent" MouseLeftButtonDown="PageMouseDown" MouseMove="PageMouseMove" MouseLeftButtonUp="PageMouseUp"/>
+    <Canvas x:Name="EditCanvas" LostMouseCapture="CanvasCaptureLost" Focusable="True" Background="Transparent" MouseLeftButtonDown="PageMouseDown" MouseMove="PageMouseMove" MouseLeftButtonUp="PageMouseUp"/>
    </Grid>
   </ScrollViewer>
  </DockPanel>

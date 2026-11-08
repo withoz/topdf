@@ -106,7 +106,10 @@ public partial class MainWindow : Window
     {
         var paths = arguments.Where(File.Exists).Select(Path.GetFullPath).ToArray();
         if (paths.Length == 0) { Summary.Text = "열 파일을 찾을 수 없습니다."; return; }
-        Add(paths);
+        var project=paths.FirstOrDefault(p=>Path.GetExtension(p).Equals(".topdf",StringComparison.OrdinalIgnoreCase));
+        var documents=paths.Where(p=>!Path.GetExtension(p).Equals(".topdf",StringComparison.OrdinalIgnoreCase)).ToArray();
+        if(documents.Length>0) Add(documents);
+        if(project!=null){await StartPdfEditorAsync(project,Path.GetFileName(project));return;}
         Files.SelectedItem = jobs.First(j => j.Source.Equals(paths[0], StringComparison.OrdinalIgnoreCase));
         await ConvertPendingAsync();
         await Task.WhenAll(jobs.Where(j => j.Pdf != null).Select(InspectAsync).ToArray());

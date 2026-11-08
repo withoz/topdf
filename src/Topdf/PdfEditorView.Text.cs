@@ -66,13 +66,14 @@ public partial class PdfEditorView
     public void SelectSourceText(string id)
     {
         ApplyInlineText();
-        selectedSource=SourceTextItems.Single(t=>t.Id==id);selectedId="";
+        selectedIds.Clear(); selectedSource=SourceTextItems.Single(t=>t.Id==id);selectedId="";
         EditText.Text=selectedSource.Text;SelectFont(selectedSource.FontSize,selectedSource.Color);
         DrawElements();inlineText?.Focus();inlineText?.SelectAll();
         EditStatus.Text="본문을 직접 입력한 뒤 Enter로 적용하세요. Esc는 선택 취소입니다.";
     }
     void ApplyInlineText()
     {
+        addedTextCommit?.Invoke();
         if(selectedSource==null || inlineText==null || selectingText || saving) return;
         var text=inlineText.Text;var original=selectedSource;
         if(text==original.Text) return;

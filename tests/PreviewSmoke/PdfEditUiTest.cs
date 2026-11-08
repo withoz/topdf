@@ -14,6 +14,7 @@ internal static class PdfEditUiTest
             var editor = new PdfEditorWindow(Path.GetFullPath(source)); editor.Show();
             try {
                 await editor.Ready.WaitAsync(TimeSpan.FromSeconds(60));
+                foreach(var panel in Descendants(editor).OfType<Expander>())panel.IsExpanded=true; editor.UpdateLayout();
                 var original = SHA256.HashData(File.ReadAllBytes(source));
                 editor.AddText(60,350,"UI 수정 321,000원");
                 editor.UpdateLayout();

@@ -99,7 +99,33 @@ def draw_element(canvas, element, width, height, font):
     canvas.saveState()
     try:
         canvas.translate(cx, height-cy); canvas.rotate(-angle); canvas.translate(-w/2, -h/2)
-        if kind == 'stamp':
+        if kind in ('line', 'arrow', 'rectangle', 'ellipse', 'highlight', 'underline', 'strikeout', 'freehand'):
+            color = element.get('color', '#111111')
+            fill = element.get('fill', 'none')
+            if not re.fullmatch(r'#[0-9a-fA-F]{6}', color) or (fill != 'none' and not re.fullmatch(r'#[0-9a-fA-F]{6}', fill)): raise ValueError('잘못된 도형 색상')
+            stroke = scalar(element.get('strokeWidth', 2))
+            if not .1 <= stroke <= 20: raise ValueError('잘못된 선 두께')
+            canvas.setStrokeColor(colors.HexColor(color)); canvas.setLineWidth(stroke)
+            canvas.setFillColor(colors.HexColor(fill if fill != 'none' else color))
+            if element.get('dashed'): canvas.setDash(stroke*4, stroke*3)
+            inset = min(stroke/2, w/2, h/2)
+            if kind == 'highlight':
+                canvas.setFillColor(colors.HexColor(color)); canvas.setFillAlpha(.3); canvas.rect(inset, inset, max(.1,w-2*inset), max(.1,h-2*inset), fill=1, stroke=0)
+            elif kind in ('rectangle','ellipse'):
+                if kind == 'rectangle': canvas.rect(inset,inset,max(.1,w-2*inset),max(.1,h-2*inset),fill=int(fill!='none'),stroke=1)
+                else: canvas.ellipse(inset,inset,w-inset,h-inset,fill=int(fill!='none'),stroke=1)
+            else:
+                points = element.get('points', [[0,0],[1,1]])
+                if not 1 <= len(points) <= 10000 or any(len(p)!=2 or any(not 0<=scalar(v)<=1 for v in p) for p in points): raise ValueError('잘못된 곡선 좌표')
+                points = [(inset+p[0]*(w-2*inset), h-inset-p[1]*(h-2*inset)) for p in points]
+                path = canvas.beginPath();path.moveTo(*points[0])
+                for point in points[1:]: path.lineTo(*point)
+                canvas.drawPath(path)
+                if kind == 'arrow' and len(points)>1:
+                    a,b=points[-2:]; angle=math.atan2(b[1]-a[1],b[0]-a[0]); length=min(min(w,h)/2,max(6,stroke*4))
+                    canvas.setDash()
+                    for offset in (-.5,.5): canvas.line(*b,b[0]-length*math.cos(angle+offset),b[1]-length*math.sin(angle+offset))
+        elif kind == 'stamp':
             path = Path(element['imagePath'])
             if path.suffix.lower() not in ('.png', '.jpg', '.jpeg') or path.stat().st_size > 20_000_000: raise ValueError('도장은 20MB 이하 PNG/JPG를 사용하세요.')
             with Image.open(path) as image:
@@ -118,7 +144,8 @@ def draw_element(canvas, element, width, height, font):
             if kind == 'note':
                 canvas.setFillColor(colors.HexColor('#FFF3AF')); canvas.setStrokeColor(colors.HexColor('#D6BB55'))
                 canvas.roundRect(0, 0, w, h, 4, fill=1, stroke=1)
-            style = ParagraphStyle('TOPDF', fontName=font, fontSize=size, leading=size*1.35, textColor=colors.HexColor(color), wordWrap='CJK')
+            selected_font = {'Malgun Gothic': font, 'Gulim': 'TOPDF-Gulim', 'Batang': 'TOPDF-Batang'}.get(element.get('fontFamily', 'Malgun Gothic'), font)
+            style = ParagraphStyle('TOPDF', alignment={'left':0,'center':1,'right':2}.get(element.get('alignment','left'),0), fontName=selected_font, fontSize=size, leading=size*1.35, textColor=colors.HexColor(color), wordWrap='CJK')
             paragraph = Paragraph(escape(text).replace('\n', '<br/>'), style)
             _, needed = paragraph.wrap(w-pad*2, max(1, h-pad*2))
             if needed > h-pad*2+.5: raise ValueError('글자가 영역을 벗어납니다. 항목을 키우거나 글자 크기·내용을 줄여 주세요.')
@@ -147,6 +174,9 @@ def export(path, plan_path, target):
         font_path = Path(os.environ.get('WINDIR', 'C:/Windows'))/'Fonts'/'malgun.ttf'
         if not font_path.is_file(): raise ValueError('한글 글자 저장에 Windows 맑은 고딕 글꼴이 필요합니다.')
         pdfmetrics.registerFont(TTFont('TOPDF-Malgun', str(font_path))); font = 'TOPDF-Malgun'
+        for name, filename in [('Gulim','gulim.ttc'),('Batang','batang.ttc')]:
+            if any(e.get('fontFamily')==name for p in pages for e in p.get('elements', [])):
+                pdfmetrics.registerFont(TTFont('TOPDF-'+name, str(font_path.parent/filename) if (font_path.parent/filename).is_file() else str(font_path), subfontIndex=0))
     writer = PdfWriter(); writer.append(reader, pages=indices, import_outline=True)
     overlays = []  # Keep reader identities/streams alive until pypdf finishes cloning resources.
     for position, specification in enumerate(pages):

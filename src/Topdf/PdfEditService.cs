@@ -20,6 +20,12 @@ public sealed class PdfEditElement
     public double FontSize { get; set; } = 14;
     public string Color { get; set; } = "#111111";
     public int Rotation { get; set; }
+    public double StrokeWidth { get; set; } = 2;
+    public bool Dashed { get; set; }
+    public string Fill { get; set; } = "none";
+    public string Alignment { get; set; } = "left";
+    public string FontFamily { get; set; } = "Malgun Gothic";
+    public List<double[]> Points { get; set; } = [];
     public string? SourceTextId { get; set; }
     public string? SourceText { get; set; }
 }
@@ -32,6 +38,7 @@ public sealed class PdfEditPage
 }
 public sealed class PdfEditPlan
 {
+    public int FormatVersion { get; set; } = 1;
     public string SourceSha256 { get; set; } = "";
     public List<PdfEditPage> Pages { get; set; } = [];
 }
