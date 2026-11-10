@@ -23,6 +23,15 @@ public partial class PdfEditorView
     static TextAlignment AlignmentOf(PdfEditElement x) => x.Alignment == "center" ? TextAlignment.Center : x.Alignment == "right" ? TextAlignment.Right : TextAlignment.Left;
     List<PdfEditElement> Objects() => Page?.Elements.Where(x=>selectedIds.Contains(x.Id) || x.Id==selectedId).ToList() ?? [];
     void SetObjectStyle(PdfEditElement x) { x.Color=ColorValue; x.FontSize=FontSizeValue; x.StrokeWidth=double.Parse(((ComboBoxItem)StrokeSize.SelectedItem).Content.ToString()!); x.Dashed=DashStroke.IsChecked==true;x.Fill=FillShape.IsChecked==true?ColorValue:"none";var family=((ComboBoxItem)TextFont.SelectedItem).Content.ToString()!;if(family!=x.FontFamily)x.PreserveSourceStyle=false;x.FontFamily=family;x.Alignment=new[]{"left","center","right"}[TextAlign.SelectedIndex]; }
+    bool ShowSelectionDecorations=>drawing==null && EditTool?.SelectedIndex is 0 or 1;
+    void RefreshSelectionDecorations()
+    {
+        foreach(var border in EditCanvas.Children.OfType<Border>().Where(x=>x.Tag is PdfEditElement)){
+            var item=(PdfEditElement)border.Tag;border.BorderThickness=new Thickness(ShowSelectionDecorations&&(selectedId==item.Id||selectedIds.Contains(item.Id))?1:0);
+        }
+        if(!ShowSelectionDecorations){foreach(var thumb in EditCanvas.Children.OfType<System.Windows.Controls.Primitives.Thumb>().ToArray())EditCanvas.Children.Remove(thumb);}
+        else if(!EditCanvas.Children.OfType<System.Windows.Controls.Primitives.Thumb>().Any()){DrawResizeHandle();UpdateZoomAdorners();}
+    }
     bool DrawGraphic(PdfEditElement x)
     {
         if(!Graphics.Contains(x.Kind))return false;
@@ -47,7 +56,7 @@ public partial class PdfEditorView
             var angle=Math.Atan2((b[1]-a[1])*(x.Height-2*inset),(b[0]-a[0])*(x.Width-2*inset));var length=Math.Min(Math.Min(x.Width,x.Height)/2,Math.Max(6,x.StrokeWidth*4));
             canvas.Children.Add(new Polyline { Stroke=brush,StrokeThickness=x.StrokeWidth,Points=new PointCollection{new(end.X-length*Math.Cos(angle-.5),end.Y-length*Math.Sin(angle-.5)),end,new(end.X-length*Math.Cos(angle+.5),end.Y-length*Math.Sin(angle+.5))} });
         }
-        var border=new Border {Width=x.Width,Height=x.Height,Child=canvas,Background=Brushes.Transparent,Tag=x,RenderTransformOrigin=new(.5,.5),RenderTransform=new RotateTransform(x.Rotation),BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(selectedIds.Contains(x.Id)||selectedId==x.Id?1:0)};
+        var border=new Border {Width=x.Width,Height=x.Height,Child=canvas,Background=Brushes.Transparent,IsHitTestVisible=false,Tag=x,RenderTransformOrigin=new(.5,.5),RenderTransform=new RotateTransform(x.Rotation),BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(ShowSelectionDecorations&&(selectedIds.Contains(x.Id)||selectedId==x.Id)?1:0)};
         border.MouseLeftButtonDown+=ElementMouseDown;Canvas.SetLeft(border,x.X);Canvas.SetTop(border,x.Y);EditCanvas.Children.Add(border);return true;
     }
     bool BeginGraphic(Point p)
@@ -121,7 +130,7 @@ public partial class PdfEditorView
     }
     void DrawResizeHandle()
     {
-        var items=Objects();if(items.Count==0 || drawing!=null)return;
+        var items=Objects();if(items.Count==0 || !ShowSelectionDecorations)return;
         if(items.Count==1 && items[0].Kind is "line" or "arrow" or "underline" or "strikeout" && items[0].Points.Count==2){DrawEndpointHandles(items[0]);return;}
         var right=items.Max(x=>x.X+x.Width);var bottom=items.Max(x=>x.Y+x.Height);
         var thumb=new System.Windows.Controls.Primitives.Thumb {Width=10,Height=10,Background=Brushes.DodgerBlue,Cursor=Cursors.SizeNWSE};

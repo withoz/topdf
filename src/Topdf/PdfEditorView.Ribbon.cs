@@ -43,6 +43,7 @@ public partial class PdfEditorView
         if(TextToolsButton!=null)TextToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 0 or 2 ? active : Brushes.White;
         if(DrawingToolsButton!=null)DrawingToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 5 or 6 or 7 or 8 or 12 ? active : Brushes.White;
         if(MarkupToolsButton!=null)MarkupToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 3 or 9 or 10 or 11 ? active : Brushes.White;
+        if(EditCanvas!=null)RefreshSelectionDecorations();
     }
     bool syncingPalette;
     void RefreshPenColor()
