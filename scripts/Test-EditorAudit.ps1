@@ -31,6 +31,7 @@ Invoke-AuditStep 'ui-build' 'dotnet' @('build','tests/PreviewSmoke/PreviewSmoke.
 if($IncludeUi){
     $exe=Join-Path $harness 'PreviewSmoke.exe'
     Invoke-AuditStep 'annotation-ui' $exe @('--drawing-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
+    Invoke-AuditStep 'commands-ui' $exe @('--commands-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
     Invoke-AuditStep 'font-views-ui' $exe @('--font-views-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
     Invoke-AuditStep 'zoom-ui' $exe @('--zoom-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
     Invoke-AuditStep 'unified-ui' $exe @('--unified-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))

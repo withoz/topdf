@@ -63,7 +63,7 @@ public partial class PdfEditorView
     {
         var kind=Tool switch {"선"=>"line","화살표"=>"arrow","사각형"=>"rectangle","타원"=>"ellipse","형광펜"=>"highlight","밑줄"=>"underline","취소선"=>"strikeout","자유곡선"=>"freehand",_=>null};
         if(kind==null)return false;
-        ApplyInlineText();drawingBefore=Capture();drawingStart=p;drawing=new(){Kind=kind,X=p.X,Y=p.Y,Width=1,Height=1,Points=[new[]{p.X,p.Y}]};SetObjectStyle(drawing);if(kind=="highlight" && ColorValue=="#111111")drawing.Color="#FFEB3B";Page!.Elements.Add(drawing);selectedIds.Clear();selectedId=drawing.Id;EditCanvas.CaptureMouse();return true;
+        ApplyInlineText();Keyboard.Focus(EditCanvas);drawingBefore=Capture();drawingStart=p;drawing=new(){Kind=kind,X=p.X,Y=p.Y,Width=1,Height=1,Points=[new[]{p.X,p.Y}]};SetObjectStyle(drawing);if(kind=="highlight" && ColorValue=="#111111")drawing.Color="#FFEB3B";Page!.Elements.Add(drawing);selectedIds.Clear();selectedId=drawing.Id;EditCanvas.CaptureMouse();CommandManager.InvalidateRequerySuggested();return true;
     }
     bool MoveGraphic(MouseEventArgs e)
     {
@@ -122,6 +122,7 @@ public partial class PdfEditorView
     {
         if(Selected is not {} item)return;DrawElements();
         var box=new TextBox {MaxLength=5000,Text=item.Text,Width=item.Width,Height=item.Height,FontFamily=new FontFamily(item.FontFamily),TextAlignment=AlignmentOf(item),Background=item.Kind=="note"?new SolidColorBrush(Color.FromRgb(255,243,175)):Brushes.White,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(1),Padding=new Thickness(item.Kind=="note"?7:1),VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Foreground=(Brush)new BrushConverter().ConvertFromString(item.Color)!,RenderTransformOrigin=new Point(.5,.5),RenderTransform=new RotateTransform(item.Rotation),FontSize=item.FontSize,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap};
+        box.IsUndoEnabled=false;box.IsUndoEnabled=true;
         Canvas.SetLeft(box,item.X);Canvas.SetTop(box,item.Y);EditCanvas.Children.Add(box);
         var done=false;void Finish(){if(done)return;done=true;addedTextCommit=null;var before=Capture();item.Text=string.IsNullOrWhiteSpace(box.Text)?"텍스트":box.Text;EditText.Text=item.Text;item.Height=Math.Min(SizeOfPage().H,TextHeight(item));Clamp(item);Commit(before);}
         addedTextCommit=Finish;
@@ -136,7 +137,11 @@ public partial class PdfEditorView
         var thumb=new System.Windows.Controls.Primitives.Thumb {Width=10,Height=10,Background=Brushes.DodgerBlue,Cursor=Cursors.SizeNWSE};
         Canvas.SetLeft(thumb,right-5);Canvas.SetTop(thumb,bottom-5);EditCanvas.Children.Add(thumb);
         History? before=null;double total=0;
-        thumb.DragStarted+=(_,_)=>{before=Capture();total=0;};
+        Action? cancel=null;
+        thumb.DragStarted+=(_,_)=>{
+            Keyboard.Focus(EditCanvas);before=Capture();total=0;
+            cancel=()=>{var snapshot=before;before=null;thumb.CancelDrag();if(snapshot!=null){Restore(snapshot);dirty=!IsClean();}};cancelEditGesture=cancel;CommandManager.InvalidateRequerySuggested();
+        };
         thumb.DragDelta+=(_,e)=>{
             if(before==null)return;total+=e.HorizontalChange;
             var original=before.Plan.Pages[before.Page].Elements.Where(x=>items.Any(i=>i.Id==x.Id)).ToArray();
@@ -147,7 +152,12 @@ public partial class PdfEditorView
                 Canvas.SetLeft(thumb,items.Max(x=>x.X+x.Width)-thumb.Width/2);Canvas.SetTop(thumb,items.Max(x=>x.Y+x.Height)-thumb.Height/2);
             }catch(InvalidOperationException){foreach(var x in items){var old=original.Single(i=>i.Id==x.Id);x.X=old.X;x.Y=old.Y;x.Width=old.Width;x.Height=old.Height;x.FontSize=old.FontSize;}}
         };
-        thumb.DragCompleted+=(_,_)=>{if(before!=null)Commit(before);};
+        thumb.DragCompleted+=(_,e)=>{
+            if(ReferenceEquals(cancelEditGesture,cancel))cancelEditGesture=null;
+            var snapshot=before;before=null;if(snapshot==null)return;
+            if(e.Canceled){Restore(snapshot);dirty=!IsClean();}else if(Math.Abs(total)>.001)Commit(snapshot);else DrawElements();
+            CommandManager.InvalidateRequerySuggested();
+        };
     }
     void ApplyStyle(object s,RoutedEventArgs e){var before=Capture();foreach(var x in Objects())SetObjectStyle(x);Commit(before);}
     public void CopyObjects(){copied=PdfEditService.Clone(new(){Pages=[new(){Elements=Objects()}]}).Pages[0].Elements;}

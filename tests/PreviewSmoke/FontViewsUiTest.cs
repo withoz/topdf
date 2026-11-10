@@ -24,6 +24,10 @@ internal static class FontViewsUiTest
     var text=view.SourceTextItems.First(x=>x.Text.Contains("설계공모 공고문")||x.Text.Contains("123,000")||x.Text.Contains("설계용역"));Check(text.FontSize>0,"Actual transformed font size available");
     view.SelectSourceText(text.Id);window.UpdateLayout();var inline=((Canvas)view.FindName("EditCanvas")).Children.OfType<TextBox>().Single();Check(inline.FontSize==text.FontSize&&((SolidColorBrush)inline.Foreground).Color.A==0,"Original pixels retained beneath input");
     Check(text.CaretStops?.Length==text.Text.Length+1,"PDF glyph caret stops include final boundary");
+    Check(!inline.CanUndo,"Opening original text must not add a text undo unit");
+    window.Activate();inline.Focus();System.Windows.Input.Keyboard.Focus(inline);
+    await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Input);
+    await Until(()=>inline.IsKeyboardFocused);
     inline.Select(3,0);window.UpdateLayout();
     var caret=((Canvas)view.FindName("EditCanvas")).Children.OfType<Canvas>().Single().Children.OfType<System.Windows.Shapes.Line>().Single();
     Check(Math.Abs(caret.X1-text.CaretStops![3][0])<.01&&Math.Abs(caret.Y1-(text.CaretStops[3][1]-text.FontSize*.86))<.01,"Caret follows PDF glyph origin and baseline");

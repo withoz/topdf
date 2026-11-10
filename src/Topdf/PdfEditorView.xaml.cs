@@ -50,7 +50,7 @@ public partial class PdfEditorView : UserControl
 
     public PdfEditorView(string pdf, string? displayName = null)
     {
-        InitializeComponent(); InitializeRibbon(); input = Path.GetFullPath(pdf);
+        InitializeComponent(); InitializeRibbon();InitializeEditCommands(); input = Path.GetFullPath(pdf);
         suggestedName = Path.GetFileNameWithoutExtension(displayName ?? input) + "_수정.pdf";
 
         EnableEditing(false);
@@ -140,7 +140,7 @@ public partial class PdfEditorView : UserControl
         return image;
     }
     History Capture() => new(PdfEditService.Clone(plan), EditPages.SelectedIndex, selectedId, selectedIds.ToArray());
-    void Commit(History previous) { EnterEditing(); undo.Push(previous); if(undo.Count>100){var recent=undo.Take(100).Reverse().ToArray();undo.Clear();foreach(var entry in recent)undo.Push(entry);} redo.Clear(); dirty = true; DrawElements(); }
+    void Commit(History previous) { EnterEditing(); undo.Push(previous); if(undo.Count>100){var recent=undo.Take(100).Reverse().ToArray();undo.Clear();foreach(var entry in recent)undo.Push(entry);} redo.Clear(); dirty = true; DrawElements();CommandManager.InvalidateRequerySuggested(); }
     void DrawElements()
     {
         selectingText = true; EditCanvas.Children.Clear(); inlineText = null; selectingText = false; if (Page == null) return;
@@ -317,29 +317,21 @@ public partial class PdfEditorView : UserControl
         selectedIds.Clear();selectedIds.UnionWith(history.Selection);selectedSource=null;plan=PdfEditService.Clone(history.Plan);selectedId=history.Selected;BindPages(history.Page);
         if(render)_ = RenderPageAsync();else DrawElements();
     }
-    public void Undo() { EnterEditing(); EndGraphic(); FinishObjectDrag(); if (undo.Count == 0) return; redo.Push(Capture()); Restore(undo.Pop()); dirty = !IsClean(); }
-    public void Redo() { EnterEditing(); if (redo.Count == 0) return; undo.Push(Capture()); Restore(redo.Pop()); dirty = !IsClean(); }
-    void UndoEdit(object sender, RoutedEventArgs e) => Undo();
-    void RedoEdit(object sender, RoutedEventArgs e) => Redo();
+    public void Undo() { if(IsBusy||info==null)return;EnterEditing();if(FinishAreaSelection(true)){CommandManager.InvalidateRequerySuggested();return;}if(drawing!=null){DiscardGraphic();CommandManager.InvalidateRequerySuggested();return;}if(CancelPendingEditGesture()){CommandManager.InvalidateRequerySuggested();return;}if(undo.Count==0)return;redo.Push(Capture());Restore(undo.Pop());dirty=!IsClean();CommandManager.InvalidateRequerySuggested(); }
+    public void Redo() { if(IsBusy||info==null||drawing!=null||dragging!=null||cancelEditGesture!=null||selectionBox!=null)return;EnterEditing();if(redo.Count==0)return;undo.Push(Capture());Restore(redo.Pop());dirty=!IsClean();CommandManager.InvalidateRequerySuggested(); }
     async void EditorShortcuts(object sender, KeyEventArgs e)
     {
         if(await HandleZoomKeyAsync(e))return;
         if(e.Key==Key.Escape && FinishAreaSelection(true)){e.Handled=true;return;}
         if(e.Key==Key.Escape && !IsViewing && EditTool.SelectedIndex>=5){e.Handled=true;StopDrawingAndSelect();return;}
         if(e.Key==Key.Escape && NativeViewingHost.Content!=null){e.Handled=true;await ReturnToViewingAsync();return;}
-        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.S) { SaveEditedPdf(sender, e); e.Handled = true; }
-        else if (Keyboard.FocusedElement is not TextBox && !IsViewing) {
+        if(Keyboard.FocusedElement is not TextBox && !IsViewing){
             if(saving||changingView||Page==null)return;
-            if(e.Key is Key.Left or Key.Right or Key.Up or Key.Down && !IsViewing){var step=Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)?10:1;NudgeSelection(e.Key==Key.Left?-step:e.Key==Key.Right?step:0,e.Key==Key.Up?-step:e.Key==Key.Down?step:0);e.Handled=true;return;}
-            if(Keyboard.Modifiers==ModifierKeys.Control&&e.Key==Key.D){CopyObjects();PasteObjects();e.Handled=true;return;}
-            if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.A) { selectedIds.UnionWith(Page!.Elements.Select(x=>x.Id)); DrawElements(); e.Handled=true; }
-            else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.C) { CopyObjects(); e.Handled=true; }
-            else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.V) { PasteObjects(); e.Handled=true; }
-            else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Z) { Undo(); e.Handled = true; }
-            else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Y) { Redo(); e.Handled = true; }
-            else if (e.Key == Key.Delete) { DeleteElement(sender, e); e.Handled = true; }
+            if(e.Key is Key.Left or Key.Right or Key.Up or Key.Down){var step=Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)?10:1;NudgeSelection(e.Key==Key.Left?-step:e.Key==Key.Right?step:0,e.Key==Key.Up?-step:e.Key==Key.Down?step:0);e.Handled=true;return;}
+            if(Keyboard.Modifiers==ModifierKeys.Control&&e.Key==Key.D){CopyObjects();PasteObjects();e.Handled=true;}
         }
     }
+
     public async Task SaveCopyAsync(string destination)
     {
         if (info == null || saving) throw new InvalidOperationException("PDF를 준비한 뒤 저장하세요.");

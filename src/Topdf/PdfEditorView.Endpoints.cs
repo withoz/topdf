@@ -32,7 +32,11 @@ public partial class PdfEditorView
         for(int index=0;index<2;index++){
             var end=index;var thumb=new Thumb {Width=10,Height=10,Background=Brushes.White,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(2),Cursor=Cursors.SizeAll,ToolTip=end==0?"시작점 이동":"끝점 이동",Tag="endpoint"};
             History? before=null;Point[] original=[];Vector delta=new();
-            thumb.DragStarted+=(_,_)=>{before=Capture();original=GraphicEndpoints(item);delta=new();};
+            Action? cancel=null;
+            thumb.DragStarted+=(_,_)=>{
+                Keyboard.Focus(EditCanvas);before=Capture();original=GraphicEndpoints(item);delta=new();
+                cancel=()=>{var snapshot=before;before=null;thumb.CancelDrag();if(snapshot!=null){Restore(snapshot);dirty=!IsClean();}};cancelEditGesture=cancel;CommandManager.InvalidateRequerySuggested();
+            };
             thumb.DragDelta+=(_,e)=>{
                 if(before==null)return;delta+=new Vector(e.HorizontalChange,e.VerticalChange);
                 var points=original.ToArray();points[end]+=delta;SetGraphicEndpoints(item,points[0],points[1]);
@@ -40,10 +44,11 @@ public partial class PdfEditorView
                 DrawGraphic(item);Position();
             };
             thumb.DragCompleted+=(_,e)=>{
-                if(before==null)return;
-                if(e.Canceled){var old=before.Plan.Pages[before.Page].Elements.Single(x=>x.Id==item.Id);item.X=old.X;item.Y=old.Y;item.Width=old.Width;item.Height=old.Height;item.Rotation=old.Rotation;item.Points=old.Points;DrawElements();}
-                else if(delta.LengthSquared>.0001)Commit(before);
-                else DrawElements();before=null;
+                if(ReferenceEquals(cancelEditGesture,cancel))cancelEditGesture=null;
+                var snapshot=before;before=null;if(snapshot==null)return;
+                if(e.Canceled){Restore(snapshot);dirty=!IsClean();}
+                else if(delta.LengthSquared>.0001)Commit(snapshot);else DrawElements();
+                CommandManager.InvalidateRequerySuggested();
             };
             Panel.SetZIndex(thumb,100);handles.Add(thumb);EditCanvas.Children.Add(thumb);
         }

@@ -43,6 +43,7 @@ public partial class PdfEditorView
             Foreground=Brushes.Transparent,CaretBrush=(Brush)new BrushConverter().ConvertFromString(selected.Color)!,SelectionBrush=Brushes.LightSkyBlue,SelectionOpacity=.35,SelectionTextBrush=Brushes.Transparent,Padding=new Thickness(0),
             BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(0),Background=Brushes.Transparent,
             RenderTransformOrigin=new Point(.5,.5),RenderTransform=new RotateTransform(selected.Rotation) };
+        inlineText.IsUndoEnabled=false;inlineText.IsUndoEnabled=true;
         void ResizeInput() {
             if(inlineText==null) return;
             var layout=ReplacementLayout(selected,inlineText.Text,selected.FontSize,selected.Color);
