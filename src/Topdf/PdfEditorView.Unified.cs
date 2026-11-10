@@ -17,7 +17,7 @@ public partial class PdfEditorView
 
     public void AttachNativeViewer(FrameworkElement viewer,string path)
     {
-        EditStatus.Visibility=Visibility.Collapsed;NativeViewingHost.Content=viewer;NativeViewingHost.Visibility=Visibility.Visible;EditingArea.Visibility=Visibility.Collapsed;ViewTool.Visibility=Visibility.Visible;
+        StartZoomMonitor();EditStatus.Visibility=Visibility.Collapsed;NativeViewingHost.Content=viewer;NativeViewingHost.Visibility=Visibility.Visible;EditingArea.Visibility=Visibility.Collapsed;ViewTool.Visibility=Visibility.Visible;
         RibbonSelectionChanged(this,new SelectionChangedEventArgs(SelectorEvent,Array.Empty<object>(),Array.Empty<object>()));
     }
     public void AttachDocumentTabs(FrameworkElement tabs)
@@ -55,7 +55,7 @@ public partial class PdfEditorView
             if(position!=null && position.Page>=1 && position.Page<=plan.Pages.Count) {
                 EditPages.SelectedIndex=position.Page-1;
                 if(position.PageWidth>0) {
-                    var zoom=Math.Clamp(position.PageWidth/SizeOfPage().W*100,25,400).ToString("0.#",System.Globalization.CultureInfo.InvariantCulture)+"%";
+                    var zoom=Math.Clamp(position.PageWidth/SizeOfPage().W*75,5,800).ToString("0.#",System.Globalization.CultureInfo.InvariantCulture)+"%";
                     var option=EditZoom.Items.Cast<ComboBoxItem>().FirstOrDefault(x=>x.Content.ToString()==zoom);
                     if(option==null){option=new ComboBoxItem {Content=zoom};EditZoom.Items.Add(option);}EditZoom.SelectedItem=option;
                 }
@@ -85,11 +85,12 @@ public partial class PdfEditorView
             PenOptions.IsChecked=TextToolsButton.IsChecked=DrawingToolsButton.IsChecked=MarkupToolsButton.IsChecked=MoreOptions.IsChecked=false;
             var path=await GetViewingPdfAsync();
             EnableEditing(false);
-            if(ViewColumns==1 && NavigateViewingPdf!=null)await NavigateViewingPdf(path,EditPages.SelectedIndex+1,(EditSurface.LayoutTransform as System.Windows.Media.ScaleTransform)?.ScaleX*75 ?? 75);
+            if(ViewColumns==1 && NavigateViewingPdf!=null)await NavigateViewingPdf(path,EditPages.SelectedIndex+1,CurrentZoomPercent);
             if(ViewColumns>1)BuildSpreads(path);
             selectedSource=null;selectedId="";selectedIds.Clear();
             EditingArea.Visibility=Visibility.Collapsed;NativeViewingHost.Visibility=ViewColumns==1?Visibility.Visible:Visibility.Collapsed;SpreadPages.Visibility=ViewColumns>1?Visibility.Visible:Visibility.Collapsed;viewer.Visibility=ViewColumns==1?Visibility.Visible:Visibility.Collapsed;RefreshPagePane();
             RibbonSelectionChanged(this,new SelectionChangedEventArgs(SelectorEvent,Array.Empty<object>(),Array.Empty<object>()));
+            if(ViewColumns==1){if(zoomFit!=null&&NativeZoomCommand!=null)await NativeZoomAsync(zoomFit);else await SyncViewingZoomAsync();}
             EditStatus.Visibility=Visibility.Collapsed;EditStatus.Text="보기";if(ViewColumns==1)viewer.Focus();else SpreadPages.Focus();
         } catch(OperationCanceledException) {} catch(Exception ex){EditStatus.Visibility=Visibility.Visible;EditStatus.Text=ex.Message;}
         finally{changingView=false;EnableEditing(info!=null&&!saving);}

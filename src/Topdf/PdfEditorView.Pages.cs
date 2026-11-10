@@ -13,7 +13,14 @@ public partial class PdfEditorView
     public Func<Task>? ToggleNativePagePane {get;set;}
     readonly SemaphoreSlim previewSlots=new(2);
     readonly Dictionary<string,string> pagePreviews=[];
-    readonly List<List<PageTile>> spreadRows=[];
+    sealed class SpreadRow : List<PageTile>,INotifyPropertyChanged
+    {
+        public int Columns {get;init;}
+        public double Width=>Count==0?0:this.Max(x=>x.Width+10)*Columns;
+        public event PropertyChangedEventHandler? PropertyChanged;
+        public void Refresh()=>PropertyChanged?.Invoke(this,new(nameof(Width)));
+    }
+    readonly List<SpreadRow> spreadRows=[];
     sealed class PageTile : INotifyPropertyChanged
     {
         public int Index {get;init;}
@@ -31,7 +38,7 @@ public partial class PdfEditorView
     }
     public async Task SetViewColumnsAsync(int count)
     {
-        if(count<1||count>3||IsBusy)return;ViewColumns=count;PageLayoutOptions.IsChecked=false;await ReturnToViewingAsync(true);
+        if(count<1||count>3||IsBusy)return;zoomFit="width";ViewColumns=count;PageLayoutOptions.IsChecked=false;await ReturnToViewingAsync(true);
     }
     async void TogglePagePane(object sender,RoutedEventArgs e)
     {
@@ -45,7 +52,7 @@ public partial class PdfEditorView
     {
         spreadRows.Clear();
         for(int first=0;first<plan.Pages.Count;first+=ViewColumns) {
-            var row=new List<PageTile>();for(int i=first;i<Math.Min(first+ViewColumns,plan.Pages.Count);i++) {
+            var row=new SpreadRow {Columns=ViewColumns};for(int i=first;i<Math.Min(first+ViewColumns,plan.Pages.Count);i++) {
                 var page=plan.Pages[i];var data=info!.Pages[page.SourceIndex];var w=page.Rotation is 90 or 270?data.Height:data.Width;var h=page.Rotation is 90 or 270?data.Width:data.Height;
                 row.Add(new(){Index=i,Pdf=pdf,Ratio=h/w});
             }spreadRows.Add(row);
@@ -53,10 +60,18 @@ public partial class PdfEditorView
         SpreadPages.Tag=ViewColumns;SpreadPages.ItemsSource=null;SpreadPages.ItemsSource=spreadRows;UpdateSpreadSizes();
         if(EditPages.SelectedIndex>=0&&spreadRows.Count>0)SpreadPages.ScrollIntoView(spreadRows[EditPages.SelectedIndex/ViewColumns]);
     }
-    void ResizeSpreads(object sender,SizeChangedEventArgs e)=>UpdateSpreadSizes();
+    void ResizeSpreads(object sender,SizeChangedEventArgs e){UpdateSpreadSizes();}
     void UpdateSpreadSizes()
     {
-        var width=Math.Max(80,(SpreadPages.ActualWidth-35)/ViewColumns-12);foreach(var tile in spreadRows.SelectMany(x=>x))tile.Width=width;
+        if(info==null||SpreadPages.ActualWidth<=0)return;
+        var fit=Math.Max(60,(SpreadPages.ActualWidth-35)/ViewColumns-12);
+        foreach(var row in spreadRows){foreach(var tile in row){
+            var page=plan.Pages[tile.Index];var data=info.Pages[page.SourceIndex];var pageWidth=page.Rotation is 90 or 270?data.Height:data.Width;
+            tile.Width=zoomFit is "width" or "page"?fit:pageWidth*CurrentZoomPercent/75;
+            if(zoomFit=="page")tile.Width=Math.Min(tile.Width,Math.Max(50,SpreadPages.ActualHeight-45)/tile.Ratio);
+        }row.Refresh();}
+        if(zoomFit!=null&&spreadRows.FirstOrDefault()?.FirstOrDefault() is {} first){var page=plan.Pages[first.Index];var data=info.Pages[page.SourceIndex];SetZoomLabel(first.Width/(page.Rotation is 90 or 270?data.Height:data.Width)*75);}
+
     }
     void SpreadPageClicked(object sender,RoutedEventArgs e)
     {

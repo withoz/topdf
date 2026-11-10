@@ -20,6 +20,29 @@ public partial class MainWindow
         var handle=new WindowInteropHelper(this).Handle;
         try {await Task.Run(()=>{var root=AutomationElement.FromHandle(handle);if(root.Current.ProcessId!=Environment.ProcessId)return;var viewer=root.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,"PdfViewer"));var button=viewer?.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,"contents"));if(button!=null&&button.TryGetCurrentPattern(InvokePattern.Pattern,out var invoke))((InvokePattern)invoke).Invoke();}).WaitAsync(TimeSpan.FromSeconds(2));}catch(Exception){}
     }
+    async Task<bool> ChangeNativeZoomAsync(string command)
+    {
+        var handle=new WindowInteropHelper(this).Handle;
+        try{return await Task.Run(()=>{
+            var root=AutomationElement.FromHandle(handle);if(root.Current.ProcessId!=Environment.ProcessId)return false;
+            var viewer=root.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,"PdfViewer"));
+            if(viewer==null)return false;
+            var id=command=="in"?"zoom-in":command=="out"?"zoom-out":"pagefit";
+            var button=viewer.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,id));
+            if(button==null||!button.TryGetCurrentPattern(InvokePattern.Pattern,out var pattern))return false;
+            if(command is "width" or "page"){
+                var label=button.Current.Name.ToLowerInvariant();
+                var offersWidth=label.Contains("너비")||label.Contains("width");
+                var offersPage=label.Contains("페이지")||label.Contains("page");
+                if((command=="width"&&offersPage)||(command=="page"&&offersWidth)){
+                    ((InvokePattern)pattern).Invoke();Thread.Sleep(40);
+                    button=viewer.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,id));
+                    if(button==null||!button.TryGetCurrentPattern(InvokePattern.Pattern,out pattern))return false;
+                }
+            }
+            ((InvokePattern)pattern).Invoke();return true;
+        }).WaitAsync(TimeSpan.FromSeconds(2));}catch(Exception){return false;}
+    }
     static PdfViewingPosition? ReadOwnPdfPosition(IntPtr handle,double dpi)
     {
         // Read only this window's embedded PDF control. Never inspect another application.

@@ -61,7 +61,7 @@ public partial class PdfEditorView : UserControl
     bool initialized;
     public event EventHandler? Saved;
     Window DialogOwner => Window.GetWindow(this);
-    public void DisposeEditor() { lifetime.Cancel(); renderCancellation?.Cancel(); }
+    public void DisposeEditor() { zoomMonitor.Stop();lifetime.Cancel(); renderCancellation?.Cancel(); }
     public bool CanClose() { var e = new CancelEventArgs(); CheckClosing(this,e); return !e.Cancel; }
     async Task InitializeAsync()
     {
@@ -134,8 +134,8 @@ public partial class PdfEditorView : UserControl
     {
         if (images.TryGetValue(path, out var cached)) return cached;
         var image = new BitmapImage(); image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad;
-        image.UriSource = new Uri(Path.GetFullPath(path)); image.DecodePixelWidth = 1800; image.EndInit(); image.Freeze();
-        if (images.Count >= 12) images.Remove(images.Keys.First());
+        image.UriSource = new Uri(Path.GetFullPath(path)); image.EndInit(); image.Freeze();
+        while(images.Count>0&&(images.Count>=8||images.Values.Sum(x=>(long)x.PixelWidth*x.PixelHeight*4)+(long)image.PixelWidth*image.PixelHeight*4>96000000))images.Remove(images.Keys.First());
         images[path] = image;
         return image;
     }
@@ -156,7 +156,7 @@ public partial class PdfEditorView : UserControl
             border.MouseLeftButtonDown += ElementMouseDown;
             Canvas.SetLeft(border, element.X); Canvas.SetTop(border, element.Y); EditCanvas.Children.Add(border);
         }
-        DrawResizeHandle();
+        DrawResizeHandle();UpdateZoomAdorners();
         if(!IsViewing)TextProperties.Visibility=selectedSource!=null || Selected?.Kind is "text" or "note" or "replace" || EditTool.SelectedIndex is 0 or 2 or 3 ? Visibility.Visible : Visibility.Collapsed;
     }
     void Clamp(PdfEditElement element)
@@ -321,10 +321,9 @@ public partial class PdfEditorView : UserControl
     public void Redo() { EnterEditing(); if (redo.Count == 0) return; undo.Push(Capture()); Restore(redo.Pop()); dirty = !IsClean(); }
     void UndoEdit(object sender, RoutedEventArgs e) => Undo();
     void RedoEdit(object sender, RoutedEventArgs e) => Redo();
-    void ZoomChanged(object sender, SelectionChangedEventArgs e) { if (EditSurface != null) ApplyZoom(); }
-    void ApplyZoom() { var text = ((ComboBoxItem)EditZoom.SelectedItem).Content.ToString()!.TrimEnd('%'); var zoom = double.Parse(text, CultureInfo.InvariantCulture)/100; EditSurface.LayoutTransform = new ScaleTransform(zoom,zoom); }
     async void EditorShortcuts(object sender, KeyEventArgs e)
     {
+        if(await HandleZoomKeyAsync(e))return;
         if(e.Key==Key.Escape && FinishAreaSelection(true)){e.Handled=true;return;}
         if(e.Key==Key.Escape && !IsViewing && EditTool.SelectedIndex>=5){e.Handled=true;StopDrawingAndSelect();return;}
         if(e.Key==Key.Escape && NativeViewingHost.Content!=null){e.Handled=true;await ReturnToViewingAsync();return;}

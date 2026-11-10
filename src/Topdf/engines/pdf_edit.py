@@ -71,7 +71,7 @@ def render(path, index, rotation, target, plan_path=None, max_size=1800):
             cleaned = cleaned_page(path, index, specification.get('elements', []), geometry, rotation)
     with pdfium.PdfDocument(cleaned if cleaned else str(path)) as document:
         page = document[0 if cleaned else index]
-        scale = min(2, max(160,min(1800,max_size))/max(page.get_size()))
+        scale = min(6 if max_size>1800 else 2, max(160,min(3600,max_size))/max(page.get_size()))
         bitmap = page.render(scale=scale, rotation=rotation)
         if cleaned:
             from pdf_text_edit import groups

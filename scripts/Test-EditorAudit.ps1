@@ -1,7 +1,8 @@
-param([switch]$IncludeUi,[string]$ReportDirectory='artifacts/audit-0.3.10')
+param([switch]$IncludeUi,[string]$ReportDirectory='')
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 Set-Location $root
+if(-not $ReportDirectory){$version=([xml](Get-Content (Join-Path $root 'src/Topdf/Topdf.csproj') -Raw)).Project.PropertyGroup.Version;$ReportDirectory="artifacts/audit-$version"}
 $report=[IO.Path]::GetFullPath((Join-Path $root $ReportDirectory))
 New-Item -ItemType Directory -Force $report | Out-Null
 $env:DOTNET_CLI_HOME=Join-Path $root '.local/dotnet'
@@ -31,6 +32,7 @@ if($IncludeUi){
     $exe=Join-Path $harness 'PreviewSmoke.exe'
     Invoke-AuditStep 'annotation-ui' $exe @('--drawing-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
     Invoke-AuditStep 'font-views-ui' $exe @('--font-views-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
+    Invoke-AuditStep 'zoom-ui' $exe @('--zoom-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
     Invoke-AuditStep 'unified-ui' $exe @('--unified-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
     Invoke-AuditStep 'inline-ui' $exe @('--inline-edit-ui',(Join-Path $root 'artifacts/pdf-text-test/text-source.pdf'))
     Invoke-AuditStep 'export-ui' $exe @('--export-ui')

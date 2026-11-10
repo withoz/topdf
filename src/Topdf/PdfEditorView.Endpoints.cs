@@ -28,7 +28,7 @@ public partial class PdfEditorView
     void DrawEndpointHandles(PdfEditElement item)
     {
         var handles=new List<Thumb>();
-        void Position(){var points=GraphicEndpoints(item);for(int i=0;i<handles.Count;i++){Canvas.SetLeft(handles[i],points[i].X-5);Canvas.SetTop(handles[i],points[i].Y-5);}}
+        void Position(){var points=GraphicEndpoints(item);for(int i=0;i<handles.Count;i++){Canvas.SetLeft(handles[i],points[i].X-handles[i].Width/2);Canvas.SetTop(handles[i],points[i].Y-handles[i].Height/2);}}
         for(int index=0;index<2;index++){
             var end=index;var thumb=new Thumb {Width=10,Height=10,Background=Brushes.White,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(2),Cursor=Cursors.SizeAll,ToolTip=end==0?"시작점 이동":"끝점 이동",Tag="endpoint"};
             History? before=null;Point[] original=[];Vector delta=new();

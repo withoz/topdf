@@ -64,7 +64,7 @@ public partial class PdfEditorView
     bool HasDrawingGesture(PdfEditElement item)
     {
         if(item.Points.Count<2)return false;
-        var zoom=EditSurface.LayoutTransform is ScaleTransform scale?Math.Max(.1,Math.Min(Math.Abs(scale.ScaleX),Math.Abs(scale.ScaleY))):1;
+        var zoom=EditSurface.LayoutTransform is ScaleTransform scale?Math.Max(.01,Math.Min(Math.Abs(scale.ScaleX),Math.Abs(scale.ScaleY))):1;
         var minimum=Math.Max(6,Math.Max(SystemParameters.MinimumHorizontalDragDistance,SystemParameters.MinimumVerticalDragDistance))/zoom;
         var points=item.Points;
         var w=points.Max(p=>p[0])-points.Min(p=>p[0]);var h=points.Max(p=>p[1])-points.Min(p=>p[1]);
@@ -135,7 +135,7 @@ public partial class PdfEditorView
             try{foreach(var x in items){var old=original.Single(i=>i.Id==x.Id);x.Width=Math.Max(1,old.Width*factor);x.Height=Math.Max(1,old.Height*factor);x.X=left+(old.X-left)*factor;x.Y=top+(old.Y-top)*factor;x.FontSize=Math.Clamp(old.FontSize*factor,6,96);Clamp(x);}
                 // Keep the active Thumb alive until DragCompleted.
                 foreach(var border in EditCanvas.Children.OfType<Border>().Where(b=>b.Tag is PdfEditElement)){var item=(PdfEditElement)border.Tag;if(!items.Contains(item))continue;border.Width=item.Width;border.Height=item.Height;if(border.Child is Canvas child)child.RenderTransform=new ScaleTransform(item.Width/child.Width,item.Height/child.Height);if(border.Child is TextBlock text)text.FontSize=item.FontSize;Canvas.SetLeft(border,item.X);Canvas.SetTop(border,item.Y);}
-                Canvas.SetLeft(thumb,items.Max(x=>x.X+x.Width)-5);Canvas.SetTop(thumb,items.Max(x=>x.Y+x.Height)-5);
+                Canvas.SetLeft(thumb,items.Max(x=>x.X+x.Width)-thumb.Width/2);Canvas.SetTop(thumb,items.Max(x=>x.Y+x.Height)-thumb.Height/2);
             }catch(InvalidOperationException){foreach(var x in items){var old=original.Single(i=>i.Id==x.Id);x.X=old.X;x.Y=old.Y;x.Width=old.Width;x.Height=old.Height;x.FontSize=old.FontSize;}}
         };
         thumb.DragCompleted+=(_,_)=>{if(before!=null)Commit(before);};

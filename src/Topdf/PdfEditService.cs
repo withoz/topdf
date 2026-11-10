@@ -64,7 +64,7 @@ public static class PdfEditService
     public static async Task<string> RenderAsync(string source, string folder, int page, int rotation, CancellationToken cancellation, PdfEditPlan? plan = null, int maxSize=1800)
     {
         var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".png");
-        var arguments = new List<string> { "render", source, output, "--page", page.ToString(), "--rotation", rotation.ToString(),"--max-size",maxSize.ToString() };
+        var arguments = new List<string> { "render", source, output, "--page", page.ToString(), "--rotation", rotation.ToString(),"--max-size",Math.Clamp(maxSize,160,3600).ToString() };
         if (plan != null) {
             var specification = Path.Combine(folder, Guid.NewGuid().ToString("N")+".json");
             await File.WriteAllTextAsync(specification, JsonSerializer.Serialize(plan, Json), cancellation);

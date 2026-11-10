@@ -24,7 +24,7 @@ public partial class PdfEditorView
     {
         if(selectionBox==null||Page==null)return;
         var size=SizeOfPage();point=new Point(Math.Clamp(point.X,0,size.W),Math.Clamp(point.Y,0,size.H));
-        var zoom=EditSurface.LayoutTransform is ScaleTransform scale?Math.Max(.1,scale.ScaleX):1;
+        var zoom=EditSurface.LayoutTransform is ScaleTransform scale?Math.Max(.01,scale.ScaleX):1;
         if((point-selectionStart).Length*zoom<4&&!selectionMoved)return;
         selectionMoved=true;var area=new Rect(selectionStart,point);
         var hits=Page.Elements.Where(x=>area.IntersectsWith(AnnotationBounds(x))).Select(x=>x.Id).ToHashSet();
