@@ -1,4 +1,4 @@
-#ifndef PackageDir
+﻿#ifndef PackageDir
  #error PackageDir must point to a prepared, private-data-free publish directory
 #endif
 #ifndef OutputDir
@@ -8,7 +8,7 @@
  #error Bootstrapper must point to the signed Microsoft WebView2 bootstrapper
 #endif
 #ifndef AppVersion
- #define AppVersion "0.3.13"
+ #define AppVersion "0.3.15"
 #endif
 [Setup]
 AppId={{7BB8D838-71D7-4CA3-A7A4-DB997AFCACB9}

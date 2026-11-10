@@ -1,4 +1,4 @@
-param([switch]$IncludeUi,[string]$ReportDirectory='')
+﻿param([switch]$IncludeUi,[string]$ReportDirectory='')
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -21,6 +21,7 @@ Invoke-AuditStep 'smart-fixtures' 'python' @('-X','utf8','tests/Smart/generate_f
 Invoke-AuditStep 'text-replacement' $env:TOPDF_PYTHON @('-X','utf8','tests/PdfEdit/test_text_edit.py')
 Invoke-AuditStep 'pdf-edit' 'python' @('-X','utf8','tests/PdfEdit/test_edit.py')
 Invoke-AuditStep 'vector-drawing' 'python' @('-X','utf8','tests/PdfEdit/test_drawing.py')
+Invoke-AuditStep 'line-types' 'python' @('-X','utf8','tests/PdfEdit/test_line_types.py')
 Invoke-AuditStep 'typography' 'python' @('-X','utf8','tests/PdfEdit/test_typography.py')
 Invoke-AuditStep 'legacy-font' $env:TOPDF_PYTHON @('-X','utf8','tests/PdfEdit/test_legacy_font.py')
 Invoke-AuditStep 'release-build' 'dotnet' @('build','src/Topdf/Topdf.csproj','-c','Release','--no-restore')
@@ -31,6 +32,7 @@ Invoke-AuditStep 'ui-build' 'dotnet' @('build','tests/PreviewSmoke/PreviewSmoke.
 if($IncludeUi){
     $exe=Join-Path $harness 'PreviewSmoke.exe'
     Invoke-AuditStep 'annotation-ui' $exe @('--drawing-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
+    Invoke-AuditStep 'context-text-ui' $exe @('--context-text-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
     Invoke-AuditStep 'commands-ui' $exe @('--commands-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
     Invoke-AuditStep 'font-views-ui' $exe @('--font-views-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))
     Invoke-AuditStep 'zoom-ui' $exe @('--zoom-ui',(Join-Path $root 'artifacts/typography-test/source.pdf'))

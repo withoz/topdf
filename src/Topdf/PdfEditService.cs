@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 
@@ -22,6 +22,8 @@ public sealed class PdfEditElement
     public int Rotation { get; set; }
     public double StrokeWidth { get; set; } = 2;
     public bool Dashed { get; set; }
+    public string? LineStyle { get; set; }
+    public bool AutoWidth { get; set; }
     public string Fill { get; set; } = "none";
     public string Alignment { get; set; } = "left";
     public string FontFamily { get; set; } = "Malgun Gothic";

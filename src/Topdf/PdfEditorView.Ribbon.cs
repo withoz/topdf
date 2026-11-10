@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -37,6 +37,7 @@ public partial class PdfEditorView
     void RibbonSelectionChanged(object sender,SelectionChangedEventArgs e)
     {
         if(EditorRibbon==null || EditTool==null)return;
+        if(Tool!="선")StopContinuousLine();
         foreach(var tool in RibbonButtons)tool.IsChecked=int.TryParse(tool.Tag?.ToString(),out var index)&&index==(IsViewing ? -1 : EditTool.SelectedIndex);
         if(TextProperties!=null)TextProperties.Visibility=!IsViewing && EditTool.SelectedIndex is 0 or 2 or 3 ? Visibility.Visible : Visibility.Collapsed;
         var active=new SolidColorBrush(Color.FromRgb(221,239,250));

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Windows;
@@ -101,6 +101,7 @@ public partial class PdfEditorView : UserControl
     async void EditorPageChanged(object sender, SelectionChangedEventArgs e) { if (!updating && info != null) { selectedId = ""; selectedSource = null; await RenderPageAsync(); } }
     async Task RenderPageAsync()
     {
+        StopContinuousLine();
         if (Page == null || info == null) return;
         var page = Page; var version = ++renderVersion;
         EditPageNumber.Text = (EditPages.SelectedIndex+1).ToString();
@@ -173,8 +174,8 @@ public partial class PdfEditorView : UserControl
         if (string.IsNullOrWhiteSpace(text) || text.Length > 5000) { EditStatus.Text = "내용을 1~5000자로 입력하세요."; return; }
         var size = SizeOfPage(); var width = Math.Min(note ? 200 : 240, size.W-10);
         if (width < 30 || size.H < 35) { EditStatus.Text = "페이지가 너무 작아 항목을 추가할 수 없습니다."; return; }
-        var element = new PdfEditElement { Kind = note ? "note" : "text", Text = text, X = x, Y = y, Width = width, FontSize = FontSizeValue, Color = ColorValue };
-        SetObjectStyle(element); element.Height = Math.Min(size.H-6, TextHeight(element));
+        var element = new PdfEditElement { Kind = note ? "note" : "text", AutoWidth = !note, Text = text, X = x, Y = y, Width = width, FontSize = FontSizeValue, Color = ColorValue };
+        SetObjectStyle(element); FitTextBox(element,text);
         Clamp(element); var before = Capture();selectedIds.Clear();selectedSource=null; Page.Elements.Add(element); selectedId = element.Id; Commit(before);
     }
     double TextHeight(PdfEditElement element)
@@ -216,6 +217,7 @@ public partial class PdfEditorView : UserControl
         groupOrigins = Page!.Elements.Where(x=>selectedIds.Contains(x.Id)).ToDictionary(x=>x.Id,x=>new Point(x.X,x.Y));
         if(e.ClickCount==2 && item.Kind=="replace" && item.SourceTextId!=null){SelectSourceText(item.SourceTextId);e.Handled=true;return;}
         if(e.ClickCount==2 && item.Kind is "text" or "note") {selectedId=item.Id;BeginAddedText();e.Handled=true;return;}
+        SyncLineType(item);
         selectedSource = null; selectedId = item.Id; dragging = item; dragVisual = border; dragBefore = Capture();
         dragStart = e.GetPosition(EditCanvas); dragX = item.X; dragY = item.Y;
         if (item.Kind != "stamp") {
@@ -241,6 +243,7 @@ public partial class PdfEditorView : UserControl
     void PageMouseUp(object sender, MouseButtonEventArgs e)
     {
         if(FinishAreaSelection()){e.Handled=true;return;}
+        if(continuousLineStart!=null)return;
         if (EndGraphic()) return;
         FinishObjectDrag();
     }
@@ -257,7 +260,7 @@ public partial class PdfEditorView : UserControl
     {
         if (selectedSource != null) { ReplaceSourceText(selectedSource.Id, EditText.Text); return; }
         if (Selected is not { Kind: "text" or "note" or "replace" } item || (Selected.Kind != "replace" && string.IsNullOrWhiteSpace(EditText.Text))) return;
-        var before = Capture(); item.Text = EditText.Text; item.FontSize = FontSizeValue; item.Color = ColorValue; var family=((ComboBoxItem)TextFont.SelectedItem).Content.ToString()!;if(family!=item.FontFamily)item.PreserveSourceStyle=false;item.FontFamily=family;item.Alignment=new[]{"left","center","right"}[TextAlign.SelectedIndex]; item.Height = Math.Min(SizeOfPage().H-6, TextHeight(item));
+        var before = Capture(); item.Text = EditText.Text; item.FontSize = FontSizeValue; item.Color = ColorValue; var family=((ComboBoxItem)TextFont.SelectedItem).Content.ToString()!;if(family!=item.FontFamily)item.PreserveSourceStyle=false;item.FontFamily=family;item.Alignment=new[]{"left","center","right"}[TextAlign.SelectedIndex]; if(item.Kind is "text" or "note")FitTextBox(item,item.Text);else item.Height = Math.Min(SizeOfPage().H-6, TextHeight(item));
         try { KeepVisibleInlineDraft();Clamp(item); Commit(before);if(item.Kind=="replace")_ = RenderPageAsync(); } catch (Exception ex) { Restore(before); EditStatus.Text = ex.Message; }
     }
     void ChooseStamp(object sender, RoutedEventArgs e)
@@ -317,11 +320,12 @@ public partial class PdfEditorView : UserControl
         selectedIds.Clear();selectedIds.UnionWith(history.Selection);selectedSource=null;plan=PdfEditService.Clone(history.Plan);selectedId=history.Selected;BindPages(history.Page);
         if(render)_ = RenderPageAsync();else DrawElements();
     }
-    public void Undo() { if(IsBusy||info==null)return;EnterEditing();if(FinishAreaSelection(true)){CommandManager.InvalidateRequerySuggested();return;}if(drawing!=null){DiscardGraphic();CommandManager.InvalidateRequerySuggested();return;}if(CancelPendingEditGesture()){CommandManager.InvalidateRequerySuggested();return;}if(undo.Count==0)return;redo.Push(Capture());Restore(undo.Pop());dirty=!IsClean();CommandManager.InvalidateRequerySuggested(); }
+    public void Undo() { if(IsBusy||info==null)return;StopContinuousLine();EnterEditing();if(FinishAreaSelection(true)){CommandManager.InvalidateRequerySuggested();return;}if(drawing!=null){DiscardGraphic();CommandManager.InvalidateRequerySuggested();return;}if(CancelPendingEditGesture()){CommandManager.InvalidateRequerySuggested();return;}if(undo.Count==0)return;redo.Push(Capture());Restore(undo.Pop());dirty=!IsClean();CommandManager.InvalidateRequerySuggested(); }
     public void Redo() { if(IsBusy||info==null||drawing!=null||dragging!=null||cancelEditGesture!=null||selectionBox!=null)return;EnterEditing();if(redo.Count==0)return;undo.Push(Capture());Restore(redo.Pop());dirty=!IsClean();CommandManager.InvalidateRequerySuggested(); }
     async void EditorShortcuts(object sender, KeyEventArgs e)
     {
         if(await HandleZoomKeyAsync(e))return;
+        if(e.Key==Key.Enter && continuousLineStart!=null && !IsTextCommandTarget(e.OriginalSource)){StopContinuousLine();e.Handled=true;return;}
         if(e.Key==Key.Escape && FinishAreaSelection(true)){e.Handled=true;return;}
         if(e.Key==Key.Escape && !IsViewing && EditTool.SelectedIndex>=5){e.Handled=true;StopDrawingAndSelect();return;}
         if(e.Key==Key.Escape && NativeViewingHost.Content!=null){e.Handled=true;await ReturnToViewingAsync();return;}

@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -61,9 +61,42 @@ internal static class CommandsUiTest
                 box.IsUndoEnabled=false;box.IsUndoEnabled=true;Check(!ApplicationCommands.Undo.CanExecute(null,box),"Empty text history does not fall through to object undo");
                 ((Action)Field(view,"addedTextCommit")!)();Keyboard.Focus(canvas);ApplicationCommands.Undo.Execute(null,canvas);Check(view.CurrentPlan.Pages[0].Elements.Single(x=>x.Kind=="note").Text=="원래 메모","Committed memo edit is one object history unit");ApplicationCommands.Redo.Execute(null,canvas);
                 var context=canvas.ContextMenu;context.PlacementTarget=canvas;context.IsOpen=true;await Dispatcher.Yield(DispatcherPriority.Loaded);
-                Check(context.Items.OfType<MenuItem>().All(x=>ReferenceEquals(x.CommandTarget,canvas)),"Context menu targets same canvas commands");context.IsOpen=false;
-                var folder=Path.GetFullPath("artifacts/commands-test");Directory.CreateDirectory(folder);await view.SaveProjectAsync(Path.Combine(folder,Guid.NewGuid()+".topdf"));Check(hash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(source))),"Source preserved");
-                Console.WriteLine("PASS Windows commands: Ctrl+Z gesture/focus, routed undo/redo/buttons/context, partial stroke/endpoint cancellation, redo branch, group cut/copy/paste/delete, native memo text undo, source/project preservation");result=0;
+                Check(context.Items.OfType<MenuItem>().Where(x=>x.Command!=null).All(x=>ReferenceEquals(x.CommandTarget,canvas)),"Context menu targets same canvas commands");context.IsOpen=false;
+                // CAD-style line chain: only clicks commit segments; the moving preview is never a model object.
+                selector.SelectedIndex=5;var lineCount=view.CurrentPlan.Pages[0].Elements.Count;history=History(view);
+                Call(view,"BeginGraphic",new Point(40,50));Call(view,"PreviewContinuousLine",new Point(140,50));
+                Check(view.CurrentPlan.Pages[0].Elements.Count==lineCount,"First click and rubber band do not create an object");
+                Call(view,"PageMouseUp",canvas,new MouseButtonEventArgs(Mouse.PrimaryDevice,0,MouseButton.Left));
+                Check(Field(view,"continuousLineStart")!=null,"Mouse-up keeps line chain active");
+                Call(view,"BeginGraphic",new Point(140,50));Call(view,"BeginGraphic",new Point(140,150));Call(view,"BeginGraphic",new Point(140,150));
+                Check(view.CurrentPlan.Pages[0].Elements.Count==lineCount+2&&History(view)==history+2,"Each nonzero segment is a separate undo unit");
+                var lines=view.CurrentPlan.Pages[0].Elements.TakeLast(2).ToArray();
+                Point Endpoint(PdfEditElement item,int index)=>new(item.X+item.Points[index][0]*item.Width,item.Y+item.Points[index][1]*item.Height);
+                Check((Endpoint(lines[0],1)-Endpoint(lines[1],0)).Length<.001,"Adjacent endpoints coincide");
+                Call(view,"PreviewContinuousLine",new Point(220,220));Call(view,"EndGraphic");
+                Check(view.CurrentPlan.Pages[0].Elements.Count==lineCount+2&&Field(view,"continuousLineStart")==null,"Finish discards preview, retains committed segments");
+                ApplicationCommands.Undo.Execute(null,canvas);Check(view.CurrentPlan.Pages[0].Elements.Count==lineCount+1,"Undo removes only last segment");
+                ApplicationCommands.Redo.Execute(null,canvas);Check(view.CurrentPlan.Pages[0].Elements.Count==lineCount+2,"Redo restores segment");
+                Call(view,"BeginGraphic",new Point(200,200));Call(view,"StopDrawingAndSelect");Check(selector.SelectedIndex==1&&Field(view,"continuousLineStart")==null,"Esc path finishes chain into selection");
+                selector.SelectedIndex=5;Call(view,"BeginGraphic",new Point(200,200));selector.SelectedIndex=6;Check(Field(view,"continuousLineStart")==null,"Changing tools clears chain");
+                selector.SelectedIndex=1;var styled=view.CurrentPlan.Pages[0].Elements.Last();Set(view,"selectedId",styled.Id);((HashSet<string>)Field(view,"selectedIds")!).Clear();Call(view,"DrawElements");
+                var lineTypes=(ComboBox)view.FindName("LineType");
+                foreach(var key in new[]{"dotted","dashed","dashdot","dashdotdot","solid"}){
+                    lineTypes.SelectedItem=lineTypes.Items.Cast<ComboBoxItem>().Single(x=>(string)x.Tag==key);
+                    styled=view.CurrentPlan.Pages[0].Elements.Single(x=>x.Id==styled.Id);
+                    Check(styled.LineStyle==key,"Line type updates selected object");
+                    var styledBorder=canvas.Children.OfType<Border>().Single(x=>x.Tag is PdfEditElement item&&item.Id==styled.Id);
+                    var stroke=((Canvas)styledBorder.Child).Children.OfType<System.Windows.Shapes.Shape>().First();
+                    Check(stroke.StrokeDashArray.Count==(key=="solid"?0:key=="dashdotdot"?6:key=="dashdot"?4:2),"Screen dash pattern matches line type");
+                }
+                lineTypes.SelectedIndex=4;ApplicationCommands.Undo.Execute(null,canvas);Check(view.CurrentPlan.Pages[0].Elements.Last().LineStyle=="solid","Line style Undo");ApplicationCommands.Redo.Execute(null,canvas);Check(view.CurrentPlan.Pages[0].Elements.Last().LineStyle=="dashdotdot","Line style Redo");
+                selector.SelectedIndex=5;Call(view,"BeginGraphic",new Point(200,200));
+                var enter=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(window),0,Key.Enter){RoutedEvent=Keyboard.PreviewKeyDownEvent};
+                Call(view,"EditorShortcuts",view,enter);Check(enter.Handled&&Field(view,"continuousLineStart")==null&&selector.SelectedIndex==5,"Enter ends chain while keeping line tool");
+                Call(view,"BeginGraphic",new Point(200,200));Call(view,"PreviewContinuousLine",new Point(260,240));
+
+                var folder=Path.GetFullPath("artifacts/commands-test");Directory.CreateDirectory(folder);await view.SaveProjectAsync(Path.Combine(folder,Guid.NewGuid()+".topdf"));Check(hash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(source))),"Source preserved");Check(Field(view,"continuousLineStart")==null&&view.CurrentPlan.Pages[0].Elements.Count==lineCount+2,"Saving drops uncommitted rubber band");
+                Console.WriteLine("PASS continuous line: click chain, zero-length guard, connected endpoints, mouse-up, Esc/Enter/tool switch, segment Undo/Redo, save preview exclusion; Windows commands: Ctrl+Z gesture/focus, routed undo/redo/buttons/context, partial stroke/endpoint cancellation, redo branch, group cut/copy/paste/delete, native memo text undo, source/project preservation");result=0;
             }catch(Exception ex){Console.Error.WriteLine(ex);}finally{if(window.ActivePdfEditor is {} view){Set(view,"addedTextCommit",null);Set(view,"inlineText",null);Set(view,"selectedSource",null);Set(view,"dirty",false);}window.Close();app.Shutdown();}
         };app.Run();return result;
     }

@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Windows;
@@ -24,7 +24,8 @@ internal static class DrawingUiTest
                 for(int n=0;n<names.Length;n++){
                     tool.SelectedItem=tool.Items.Cast<ComboBoxItem>().Single(x=>(string)x.Content==names[n]);
                     Call(view,"BeginGraphic",new Point(50,80+n*65));
-                    Call(view,"UpdateGraphic",new Point(130,90+n*65));Call(view,"UpdateGraphic",new Point(240,115+n*65));
+                    if(names[n]=="선")Call(view,"BeginGraphic",new Point(240,115+n*65));
+                    else {Call(view,"UpdateGraphic",new Point(130,90+n*65));Call(view,"UpdateGraphic",new Point(240,115+n*65));}
                     var drawingCanvas=(Canvas)view.FindName("EditCanvas");Check(drawingCanvas.Children.OfType<Border>().Where(x=>x.Tag is PdfEditElement).All(x=>x.BorderThickness.Left==0)&&!drawingCanvas.Children.OfType<Thumb>().Any(),"No blue selection box or handles during drawing");
                     Call(view,"EndGraphic");Check(!drawingCanvas.Children.OfType<Thumb>().Any(),"Drawing tool keeps finished annotations undecorated");
                 }

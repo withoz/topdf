@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.IO.Compression;
 using System.Text.Json;
 using System.Windows;
@@ -22,7 +22,7 @@ public partial class PdfEditorView
     static readonly HashSet<string> Graphics = ["line","arrow","rectangle","ellipse","highlight","underline","strikeout","freehand"];
     static TextAlignment AlignmentOf(PdfEditElement x) => x.Alignment == "center" ? TextAlignment.Center : x.Alignment == "right" ? TextAlignment.Right : TextAlignment.Left;
     List<PdfEditElement> Objects() => Page?.Elements.Where(x=>selectedIds.Contains(x.Id) || x.Id==selectedId).ToList() ?? [];
-    void SetObjectStyle(PdfEditElement x) { x.Color=ColorValue; x.FontSize=FontSizeValue; x.StrokeWidth=double.Parse(((ComboBoxItem)StrokeSize.SelectedItem).Content.ToString()!); x.Dashed=DashStroke.IsChecked==true;x.Fill=FillShape.IsChecked==true?ColorValue:"none";var family=((ComboBoxItem)TextFont.SelectedItem).Content.ToString()!;if(family!=x.FontFamily)x.PreserveSourceStyle=false;x.FontFamily=family;x.Alignment=new[]{"left","center","right"}[TextAlign.SelectedIndex]; }
+    void SetObjectStyle(PdfEditElement x) { x.Color=ColorValue; x.FontSize=FontSizeValue; x.StrokeWidth=double.Parse(((ComboBoxItem)StrokeSize.SelectedItem).Content.ToString()!); x.LineStyle=CurrentLineStyle;x.Dashed=x.LineStyle=="dashed";x.Fill=FillShape.IsChecked==true?ColorValue:"none";var family=((ComboBoxItem)TextFont.SelectedItem).Content.ToString()!;if(family!=x.FontFamily)x.PreserveSourceStyle=false;x.FontFamily=family;x.Alignment=new[]{"left","center","right"}[TextAlign.SelectedIndex]; }
     bool ShowSelectionDecorations=>drawing==null && EditTool?.SelectedIndex is 0 or 1;
     void RefreshSelectionDecorations()
     {
@@ -47,7 +47,7 @@ public partial class PdfEditorView
             shape=path;
         }
         shape.Stroke=brush;shape.StrokeThickness=x.StrokeWidth;shape.Fill=x.Kind is "rectangle" or "ellipse" ? (x.Fill=="none"?Brushes.Transparent:(Brush)new BrushConverter().ConvertFromString(x.Fill)!) : null;
-        if(x.Dashed)shape.StrokeDashArray=new DoubleCollection{4,3};
+        shape.StrokeDashArray=LineDashArray(x);
         if(x.Kind=="highlight") {shape.Fill=brush;shape.Stroke=Brushes.Transparent;shape.Opacity=.3;}
         if(x.Kind is "rectangle" or "ellipse" or "highlight") {Canvas.SetLeft(shape,inset);Canvas.SetTop(shape,inset);}
         canvas.Children.Add(shape);
@@ -63,10 +63,12 @@ public partial class PdfEditorView
     {
         var kind=Tool switch {"선"=>"line","화살표"=>"arrow","사각형"=>"rectangle","타원"=>"ellipse","형광펜"=>"highlight","밑줄"=>"underline","취소선"=>"strikeout","자유곡선"=>"freehand",_=>null};
         if(kind==null)return false;
+        if(kind=="line")return ContinueLine(p);
         ApplyInlineText();Keyboard.Focus(EditCanvas);drawingBefore=Capture();drawingStart=p;drawing=new(){Kind=kind,X=p.X,Y=p.Y,Width=1,Height=1,Points=[new[]{p.X,p.Y}]};SetObjectStyle(drawing);if(kind=="highlight" && ColorValue=="#111111")drawing.Color="#FFEB3B";Page!.Elements.Add(drawing);selectedIds.Clear();selectedId=drawing.Id;EditCanvas.CaptureMouse();CommandManager.InvalidateRequerySuggested();return true;
     }
     bool MoveGraphic(MouseEventArgs e)
     {
+        if(continuousLineStart!=null){PreviewContinuousLine(e.GetPosition(EditCanvas));return true;}
         if(drawing==null)return false;if(e.LeftButton!=MouseButtonState.Pressed)return true;
         UpdateGraphic(e.GetPosition(EditCanvas));return true;
     }
@@ -105,12 +107,13 @@ public partial class PdfEditorView
     void StopDrawingAndSelect()
     {
         if(saving||changingView)return;
-        DiscardGraphic();
+        StopContinuousLine();DiscardGraphic();
         DrawingToolsButton.IsChecked=MarkupToolsButton.IsChecked=PenOptions.IsChecked=false;
         EditTool.SelectedIndex=1;DrawElements();Keyboard.Focus(EditCanvas);
     }
     bool EndGraphic()
     {
+        if(continuousLineStart!=null){StopContinuousLine();return true;}
         if(drawing==null)return false;
         if(!HasDrawingGesture(drawing)) {DiscardGraphic();return true;}
         drawing.Points=drawing.Points.Select(v=>new[]{Math.Clamp((v[0]-drawing.X)/drawing.Width,0,1),Math.Clamp((v[1]-drawing.Y)/drawing.Height,0,1)}).ToList();
@@ -120,13 +123,17 @@ public partial class PdfEditorView
     void CanvasCaptureLost(object sender,MouseEventArgs e){if(FinishAreaSelection(true))return;if(drawing!=null)EndGraphic();FinishObjectDrag();}
     void BeginAddedText()
     {
-        if(Selected is not {} item)return;DrawElements();
+        if(Selected is not {} item)return;var editBefore=Capture();DrawElements();
+        foreach(var visual in EditCanvas.Children.OfType<FrameworkElement>().Where(x=>x is System.Windows.Controls.Primitives.Thumb || x.Tag is PdfEditElement element && element.Id==item.Id).ToArray())EditCanvas.Children.Remove(visual);
         var box=new TextBox {MaxLength=5000,Text=item.Text,Width=item.Width,Height=item.Height,FontFamily=new FontFamily(item.FontFamily),TextAlignment=AlignmentOf(item),Background=item.Kind=="note"?new SolidColorBrush(Color.FromRgb(255,243,175)):Brushes.White,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(1),Padding=new Thickness(item.Kind=="note"?7:1),VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Foreground=(Brush)new BrushConverter().ConvertFromString(item.Color)!,RenderTransformOrigin=new Point(.5,.5),RenderTransform=new RotateTransform(item.Rotation),FontSize=item.FontSize,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap};
         box.IsUndoEnabled=false;box.IsUndoEnabled=true;
         Canvas.SetLeft(box,item.X);Canvas.SetTop(box,item.Y);EditCanvas.Children.Add(box);
-        var done=false;void Finish(){if(done)return;done=true;addedTextCommit=null;var before=Capture();item.Text=string.IsNullOrWhiteSpace(box.Text)?"텍스트":box.Text;EditText.Text=item.Text;item.Height=Math.Min(SizeOfPage().H,TextHeight(item));Clamp(item);Commit(before);}
+        TextBlock.SetLineHeight(box,item.FontSize*1.35);
+        var done=false;
+        box.TextChanged+=(_,_)=>{if(done)return;FitTextBox(item,box.Text);box.Width=item.Width;box.Height=item.Height;};
+        void Finish(){if(done)return;done=true;addedTextCommit=null;var before=editBefore;item.Text=string.IsNullOrWhiteSpace(box.Text)?"텍스트":box.Text;EditText.Text=item.Text;FitTextBox(item,item.Text);Clamp(item);Commit(before);}
         addedTextCommit=Finish;
-        box.LostKeyboardFocus+=(_,_)=>Finish();box.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Enter && (item.Kind=="note"?Keyboard.Modifiers.HasFlag(ModifierKeys.Control):Keyboard.Modifiers!=ModifierKeys.Shift)){Finish();e.Handled=true;}};
+        box.LostKeyboardFocus+=(_,_)=>Finish();box.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){Finish();e.Handled=true;}};
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,new Action(()=>{if(!done&&EditCanvas.Children.Contains(box)){box.Focus();Keyboard.Focus(box);box.SelectAll();}}));
     }
     void DrawResizeHandle()
@@ -146,7 +153,7 @@ public partial class PdfEditorView
             if(before==null)return;total+=e.HorizontalChange;
             var original=before.Plan.Pages[before.Page].Elements.Where(x=>items.Any(i=>i.Id==x.Id)).ToArray();
             var left=original.Min(x=>x.X);var top=original.Min(x=>x.Y);var span=Math.Max(1,original.Max(x=>x.X+x.Width)-left);var factor=Math.Clamp(1+total/span,.1,10);
-            try{foreach(var x in items){var old=original.Single(i=>i.Id==x.Id);x.Width=Math.Max(1,old.Width*factor);x.Height=Math.Max(1,old.Height*factor);x.X=left+(old.X-left)*factor;x.Y=top+(old.Y-top)*factor;x.FontSize=Math.Clamp(old.FontSize*factor,6,96);Clamp(x);}
+            try{foreach(var x in items){var old=original.Single(i=>i.Id==x.Id);if(items.Count==1 && x.Kind is "text" or "note"){x.AutoWidth=false;x.Width=Math.Max(24,old.Width+total);FitTextBox(x,x.Text);}else{x.Width=Math.Max(1,old.Width*factor);x.Height=Math.Max(1,old.Height*factor);x.X=left+(old.X-left)*factor;x.Y=top+(old.Y-top)*factor;x.FontSize=Math.Clamp(old.FontSize*factor,6,96);Clamp(x);}}
                 // Keep the active Thumb alive until DragCompleted.
                 foreach(var border in EditCanvas.Children.OfType<Border>().Where(b=>b.Tag is PdfEditElement)){var item=(PdfEditElement)border.Tag;if(!items.Contains(item))continue;border.Width=item.Width;border.Height=item.Height;if(border.Child is Canvas child)child.RenderTransform=new ScaleTransform(item.Width/child.Width,item.Height/child.Height);if(border.Child is TextBlock text)text.FontSize=item.FontSize;Canvas.SetLeft(border,item.X);Canvas.SetTop(border,item.Y);}
                 Canvas.SetLeft(thumb,items.Max(x=>x.X+x.Width)-thumb.Width/2);Canvas.SetTop(thumb,items.Max(x=>x.Y+x.Height)-thumb.Height/2);
@@ -159,7 +166,7 @@ public partial class PdfEditorView
             CommandManager.InvalidateRequerySuggested();
         };
     }
-    void ApplyStyle(object s,RoutedEventArgs e){var before=Capture();foreach(var x in Objects())SetObjectStyle(x);Commit(before);}
+    void ApplyStyle(object s,RoutedEventArgs e){var before=Capture();foreach(var x in Objects()){SetObjectStyle(x);if(x.Kind is "text" or "note")FitTextBox(x,x.Text);}Commit(before);}
     public void CopyObjects(){copied=PdfEditService.Clone(new(){Pages=[new(){Elements=Objects()}]}).Pages[0].Elements;}
     public void PasteObjects(){if(Page==null||copied.Count==0)return;var before=Capture();selectedIds.Clear();foreach(var x in PdfEditService.Clone(new(){Pages=[new(){Elements=copied}]}).Pages[0].Elements){if(x.Kind=="replace"){x.Kind="text";x.PreserveSourceStyle=false;x.FontFamily="Malgun Gothic";x.SourceTextId=null;x.SourceText=null;}x.Id=Guid.NewGuid().ToString("N");x.X+=12;x.Y+=12;Clamp(x);Page.Elements.Add(x);selectedIds.Add(x.Id);}selectedId=selectedIds.FirstOrDefault()??"";Commit(before);}
     void DuplicateObjects(object s,RoutedEventArgs e){CopyObjects();PasteObjects();}

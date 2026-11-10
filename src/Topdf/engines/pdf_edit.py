@@ -112,7 +112,10 @@ def draw_element(canvas, element, width, height, font):
             if not .1 <= stroke <= 20: raise ValueError('잘못된 선 두께')
             canvas.setStrokeColor(colors.HexColor(color)); canvas.setLineWidth(stroke)
             canvas.setFillColor(colors.HexColor(fill if fill != 'none' else color))
-            if element.get('dashed'): canvas.setDash(stroke*4, stroke*3)
+            line_style = element.get('lineStyle') or ('dashed' if element.get('dashed') else 'solid')
+            patterns = {'solid': [], 'dotted': [1,2], 'dashed': [4,3], 'dashdot': [8,3,1,3], 'dashdotdot': [8,3,1,3,1,3]}
+            if not isinstance(line_style, str) or line_style not in patterns: raise ValueError('잘못된 선종류')
+            canvas.setDash([stroke*v for v in patterns[line_style]])
             inset = min(stroke/2, w/2, h/2)
             if kind == 'highlight':
                 canvas.setFillColor(colors.HexColor(color)); canvas.setFillAlpha(.3); canvas.rect(inset, inset, max(.1,w-2*inset), max(.1,h-2*inset), fill=1, stroke=0)

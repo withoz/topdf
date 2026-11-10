@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Web.WebView2.Wpf;
@@ -10,6 +10,7 @@ internal static class Program
     static int Main(string[] args)
     {
         Environment.SetEnvironmentVariable("TOPDF_DATA_DIR", Path.Combine(AppContext.BaseDirectory, "test-data"));
+        if(args.Length==2 && args[0]=="--context-text-ui") return ContextTextUiTest.Run(args[1]);
         if(args.Length==2 && args[0]=="--commands-ui") return CommandsUiTest.Run(args[1]);
         if(args.Length==2 && args[0]=="--zoom-ui") return ZoomUiTest.Run(args[1]);
         if(args.Length==2 && args[0]=="--font-views-ui") return FontViewsUiTest.Run(args[1]);

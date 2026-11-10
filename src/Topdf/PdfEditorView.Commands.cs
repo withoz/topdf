@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -56,13 +56,10 @@ public partial class PdfEditorView
     void AnnotationContextOpening(object sender,ContextMenuEventArgs e)
     {
         if(IsTextCommandTarget(e.OriginalSource))return;
+        if(continuousLineStart!=null){StopContinuousLine();e.Handled=true;return;}
         if(IsViewing||IsBusy||Page==null){e.Handled=true;return;}
         if(drawing!=null)DiscardGraphic();
-        ApplyInlineText();
-        if(e.CursorLeft>=0&&e.CursorTop>=0){
-            var hit=AnnotationAt(Mouse.GetPosition(EditCanvas),false);
-            if(hit!=null&&!Objects().Any(x=>x.Id==hit.Id)){selectedIds.Clear();selectedIds.Add(hit.Id);selectedId=hit.Id;selectedSource=null;DrawElements();}
-        }
+        PrepareAnnotationContext(Mouse.GetPosition(EditCanvas),e.CursorLeft>=0&&e.CursorTop>=0);
         Keyboard.Focus(EditCanvas);CommandManager.InvalidateRequerySuggested();
     }
     bool CancelPendingEditGesture()
