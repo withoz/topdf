@@ -42,7 +42,7 @@ public partial class PdfEditorView
     }
     void ExecuteEditCommand(object sender,ExecutedRoutedEventArgs e)
     {
-        if(e.Command==ApplicationCommands.Save||e.Command==ApplicationCommands.SaveAs){SaveEditedPdf(sender,new RoutedEventArgs());e.Handled=true;return;}
+        if(e.Command==ApplicationCommands.Save||e.Command==ApplicationCommands.SaveAs){if(editorOnly&&e.Command==ApplicationCommands.Save)SaveProject(sender,new RoutedEventArgs());else SaveEditedPdf(sender,new RoutedEventArgs());e.Handled=true;return;}
         if(IsTextCommandTarget(e.OriginalSource)||IsViewing||IsBusy||Page==null)return;
         if(e.Command==ApplicationCommands.Undo)Undo();
         else if(e.Command==ApplicationCommands.Redo)Redo();
@@ -66,8 +66,8 @@ public partial class PdfEditorView
     {
         if(cancelEditGesture!=null){var cancel=cancelEditGesture;cancelEditGesture=null;cancel();return true;}
         if(dragging!=null){
-            var before=dragBefore;dragging=null;dragVisual=null;dragBefore=null;EditCanvas.ReleaseMouseCapture();
-            if(before!=null){Restore(before);dirty=!IsClean();}return true;
+            var before=dragBefore;dragging=null;dragThresholdReached=false;dragBefore=null;EditCanvas.ReleaseMouseCapture();
+            if(before!=null){Restore(before);SetDirty(!IsClean());}return true;
         }
         return false;
     }

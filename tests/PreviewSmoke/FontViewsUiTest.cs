@@ -42,9 +42,16 @@ internal static class FontViewsUiTest
     Check(((TextBox)view.FindName("EditText")).Visibility==Visibility.Collapsed,"Duplicate ribbon text field hidden");
     inline.Text=changed;Check(live.Source!=null,"Direct page input updates immediately");
     await Until(()=>live.Source==null);
-    Tree(view).OfType<Button>().Single(x=>(x.Content as string)=="내용 적용").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Until(()=>((Canvas)view.FindName("EditCanvas")).IsEnabled);
+    typeof(PdfEditorView).GetMethod("ApplyInlineText",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(view,null);await Until(()=>((Canvas)view.FindName("EditCanvas")).IsEnabled);
     var element=view.CurrentPlan.Pages[0].Elements.Single();Check(element.PreserveSourceStyle&&Math.Abs(element.FontSize-text.FontSize)<.01,"Original style retained in plan");
     view.SelectSourceText(text.Id);window.UpdateLayout();inline=((Canvas)view.FindName("EditCanvas")).Children.OfType<TextBox>().Single();Check(inline.Text==changed,"Replacement reopens with current text");
+    ((ComboBox)view.FindName("TextAlign")).SelectedIndex=1;
+    var formatted=view.CurrentPlan.Pages[0].Elements.Single();
+    Check(formatted.Alignment=="center"&&!formatted.PreserveSourceStyle&&formatted.Text==changed,"Existing PDF text alignment applies immediately");
+    await Until(()=>((Canvas)view.FindName("EditCanvas")).IsEnabled);
+    view.Undo();
+    await Until(()=>((Canvas)view.FindName("EditCanvas")).IsEnabled);
+    Check(view.CurrentPlan.Pages[0].Elements.Single().PreserveSourceStyle,"Undo restores original PDF style");
     await view.ReturnToViewingAsync();await view.SetViewColumnsAsync(3);window.UpdateLayout();
     var spreads=(ListBox)view.FindName("SpreadPages");Check(view.IsViewing&&spreads.Visibility==Visibility.Visible&&view.ViewColumns==3,"Three-page viewer");
     Check(((IEnumerable)((IEnumerable)spreads.ItemsSource).Cast<object>().First()).Cast<object>().Count()==3,"Three pages in a row");

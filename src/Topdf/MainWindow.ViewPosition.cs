@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Windows.Automation;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -53,13 +53,21 @@ public partial class MainWindow
             var selector=viewer.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,"pageselector"));
             if(selector==null||!selector.TryGetCurrentPattern(ValuePattern.Pattern,out var pattern)||!int.TryParse(((ValuePattern)pattern).Current.Value,NumberStyles.Integer,CultureInfo.InvariantCulture,out var page))return null;
             double width=0;
+            System.Windows.Point? viewportCenter=null;
+            var viewport=viewer.Current.BoundingRectangle;
             var groups=viewer.FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Group));
             foreach(AutomationElement group in groups) {
                 var match=System.Text.RegularExpressions.Regex.Match(group.Current.Name,@"\d+");
                 if(!match.Success||!int.TryParse(match.Value,out var number)||number!=page)continue;
-                var bounds=group.Current.BoundingRectangle;if(bounds.Width>100){width=bounds.Width/dpi;break;}
+                var bounds=group.Current.BoundingRectangle;
+                if(bounds.Width<=100)continue;
+                width=bounds.Width/dpi;
+                if(bounds.Height>0 && viewport.Width>0 && viewport.Height>0)
+                    viewportCenter=new((viewport.Left+viewport.Width/2-bounds.Left)/bounds.Width,
+                        (viewport.Top+viewport.Height/2-bounds.Top)/bounds.Height);
+                break;
             }
-            return new(page,width);
+            return new(page,width,viewportCenter);
         } catch(Exception){return null;}
     }
 }

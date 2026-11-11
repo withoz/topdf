@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -39,7 +39,7 @@ public partial class PdfEditorView
         if(selectionBox==null)return false;
         selectionBox=null;
         if(cancel){selectedIds.Clear();selectedIds.UnionWith(selectionBefore);selectedId=selectedIds.FirstOrDefault()??"";}
-        EditCanvas.ReleaseMouseCapture();DrawElements();return true;
+        EditCanvas.ReleaseMouseCapture();SyncRibbonObjectProperties(Selected);DrawElements();return true;
     }
     void NudgeSelection(double dx,double dy)
     {

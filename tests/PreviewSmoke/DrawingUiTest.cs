@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Windows;
@@ -24,7 +24,7 @@ internal static class DrawingUiTest
                 for(int n=0;n<names.Length;n++){
                     tool.SelectedItem=tool.Items.Cast<ComboBoxItem>().Single(x=>(string)x.Content==names[n]);
                     Call(view,"BeginGraphic",new Point(50,80+n*65));
-                    if(names[n]=="선")Call(view,"BeginGraphic",new Point(240,115+n*65));
+                    if(names[n] is "선" or "화살표")Call(view,"BeginGraphic",new Point(240,115+n*65));
                     else {Call(view,"UpdateGraphic",new Point(130,90+n*65));Call(view,"UpdateGraphic",new Point(240,115+n*65));}
                     var drawingCanvas=(Canvas)view.FindName("EditCanvas");Check(drawingCanvas.Children.OfType<Border>().Where(x=>x.Tag is PdfEditElement).All(x=>x.BorderThickness.Left==0)&&!drawingCanvas.Children.OfType<Thumb>().Any(),"No blue selection box or handles during drawing");
                     Call(view,"EndGraphic");Check(!drawingCanvas.Children.OfType<Thumb>().Any(),"Drawing tool keeps finished annotations undecorated");
@@ -48,10 +48,10 @@ internal static class DrawingUiTest
                 Check(((PdfEditElement)Call(view,"AnnotationAt",crossing,false)!).Id==filled.Id&&((PdfEditElement)Call(view,"AnnotationAt",crossing,true)!).Id==diagonal.Id,"Filled shape hit and Alt cycling reach underlying arrow");
                 Call(view,"DrawElements");
                 var hitEvent=new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0,System.Windows.Input.MouseButton.Left){RoutedEvent=System.Windows.Input.Mouse.PreviewMouseDownEvent};
-                Call(view,"SelectHitAnnotation",crossing,false,hitEvent);Call(view,"PageMouseUp",selectionCanvas,new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0,System.Windows.Input.MouseButton.Left));
+                Call(view,"SelectHitAnnotation",crossing,false,hitEvent);Call(view,"PageMouseUp",selectionCanvas,new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0,System.Windows.Input.MouseButton.Left){RoutedEvent=System.Windows.Input.Mouse.PreviewMouseDownEvent});
                 Check(hitEvent.Handled&&((string)typeof(PdfEditorView).GetField("selectedId",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(view)!)==filled.Id,"Pointer hit routes into object selection");
-                Call(view,"SelectHitAnnotation",crossing,true,hitEvent);Call(view,"PageMouseUp",selectionCanvas,new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0,System.Windows.Input.MouseButton.Left));
-                Check(((string)typeof(PdfEditorView).GetField("selectedId",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(view)!)==diagonal.Id&&selectionCanvas.Children.OfType<Thumb>().Count()==2,"Cycling selects underlying arrow with editable endpoints");
+                Call(view,"SelectHitAnnotation",crossing,true,hitEvent);Call(view,"PageMouseUp",selectionCanvas,new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0,System.Windows.Input.MouseButton.Left){RoutedEvent=System.Windows.Input.Mouse.PreviewMouseDownEvent});
+                Check(((string)typeof(PdfEditorView).GetField("selectedId",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(view)!)==diagonal.Id&&selectionCanvas.Children.OfType<Thumb>().Count(x=>Equals(x.Tag,"endpoint"))==2,"Cycling selects underlying arrow with editable endpoints");
                 diagonal.Rotation=90;Check((bool)Call(view,"AnnotationHit",diagonal,crossing)!,"Rotated geometry hit test");
                 hitPlan.Pages[0].Elements.RemoveAll(x=>x.Id==hollow.Id||x.Id==diagonal.Id||x.Id==filled.Id);typeof(PdfEditorView).GetField("selectedId",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(view,view.CurrentPlan.Pages[0].Elements.Last().Id);Call(view,"DrawElements");
                 Call(view,"BeginAreaSelection",new Point(35,65),System.Windows.Input.ModifierKeys.None);Call(view,"UpdateAreaSelection",new Point(265,200));Call(view,"FinishAreaSelection",false);
@@ -65,9 +65,35 @@ internal static class DrawingUiTest
                 Call(view,"BeginAreaSelection",new Point(0,0),System.Windows.Input.ModifierKeys.None);Call(view,"UpdateAreaSelection",new Point(300,650));Call(view,"FinishAreaSelection",true);Check(areaSelection.Count==0,"Canceled marquee restores previous selection");
                 tool.SelectedIndex=6;
                 foreach(var offset in new[]{new Point(0,0),new Point(.4,.3),new Point(1,1)}){
-                    Call(view,"BeginGraphic",new Point(60,60));Call(view,"UpdateGraphic",new Point(60+offset.X,60+offset.Y));Call(view,"EndGraphic");
+                    Call(view,"BeginGraphic",new Point(60,60));Call(view,"BeginGraphic",new Point(60+offset.X,60+offset.Y));Call(view,"EndGraphic");
                     Check(view.CurrentPlan.Pages[0].Elements.Count==8,"Click and mouse jitter do not create arrowheads");
                 }
+                var first=new Point(60,60);var secondPoint=new Point(180,60);var third=new Point(180,150);
+                Call(view,"BeginGraphic",first);
+                Call(view,"PreviewContinuousLine",secondPoint);
+                var head=(System.Windows.Shapes.Polyline)typeof(PdfEditorView)
+                    .GetField("continuousArrowHead",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(view)!;
+                Check(head.Points[1]==first&&view.CurrentPlan.Pages[0].Elements.Count==8,"Arrow preview points to the first click without saving");
+                Call(view,"BeginGraphic",secondPoint);
+                Call(view,"PreviewContinuousLine",third);
+                Check(!selectionCanvas.Children.Contains(head),"Continuation preview has no arrowhead");
+                Call(view,"BeginGraphic",third);
+                Call(view,"BeginGraphic",new Point(240,150));
+                var chain=view.CurrentPlan.Pages[0].Elements.TakeLast(3).ToArray();
+                var firstEnds=(Point[])Call(view,"GraphicEndpoints",chain[0])!;
+                var secondEnds=(Point[])Call(view,"GraphicEndpoints",chain[1])!;
+                var thirdEnds=(Point[])Call(view,"GraphicEndpoints",chain[2])!;
+                Check(chain[0].Kind=="arrow"&&chain.Skip(1).All(x=>x.Kind=="line")&&
+                    (firstEnds[1]-first).Length<.001&&(firstEnds[0]-secondEnds[0]).Length<.001&&
+                    (secondEnds[1]-third).Length<.001&&(secondEnds[1]-thirdEnds[0]).Length<.001,
+                    "Only the first segment has an arrowhead and all vertices connect");
+                Call(view,"EndGraphic");
+                view.Undo();Check(view.CurrentPlan.Pages[0].Elements.Count==10,"Undo removes only the last segment");
+                view.Redo();Check(view.CurrentPlan.Pages[0].Elements.Count==11,"Redo restores the last segment");
+                view.Undo();view.Undo();view.Undo();
+                Call(view,"BeginGraphic",first);Call(view,"BeginGraphic",secondPoint);Call(view,"EndGraphic");
+                Check(view.CurrentPlan.Pages[0].Elements.Last().Kind=="arrow","A new chain starts with an arrowhead");
+                view.Undo();
                 tool.SelectedIndex=12;
                 Call(view,"BeginGraphic",new Point(60,60));Call(view,"UpdateGraphic",new Point(180,150));
                 var escape=new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,PresentationSource.FromVisual(window),0,System.Windows.Input.Key.Escape){RoutedEvent=System.Windows.Input.Keyboard.PreviewKeyDownEvent};
@@ -104,24 +130,69 @@ internal static class DrawingUiTest
                 var noteCanvas=(Canvas)view.FindName("EditCanvas");
                 var press=new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0,System.Windows.Input.MouseButton.Left){RoutedEvent=System.Windows.Input.Mouse.MouseDownEvent};
                 Call(view,"PageMouseDown",noteCanvas,press);Check(press.Handled&&tool.SelectedIndex==1,"Memo click handled and returns to selection");
-                Call(view,"PageMouseUp",noteCanvas,new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0,System.Windows.Input.MouseButton.Left));
+                Call(view,"PageMouseUp",noteCanvas,new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0,System.Windows.Input.MouseButton.Left){RoutedEvent=System.Windows.Input.Mouse.PreviewMouseDownEvent});
                 await Task.Delay(200);
                 Check(noteCanvas.Children.OfType<TextBox>().Single().IsKeyboardFocusWithin,"Memo input survives mouse-up and keeps keyboard focus");
                 var memo=((Canvas)view.FindName("EditCanvas")).Children.OfType<TextBox>().Single();memo.Text="검토 메모\n치수와 출입구 확인";
                 ((Action)typeof(PdfEditorView).GetField("addedTextCommit",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(view)!)();
                 Check(view.CurrentPlan.Pages[0].Elements.Single(x=>x.Kind=="note").Text.Contains("치수와 출입구"),"Direct Korean multiline memo retained");
                 view.Undo();view.Redo();Check(view.CurrentPlan.Pages[0].Elements.Single(x=>x.Kind=="note").Text.Contains("검토 메모"),"Memo undo redo");
-                view.AddText(280,220,"직접 수정 · 가운데 정렬");
-                ((ComboBox)view.FindName("TextFont")).SelectedIndex=2;((ComboBox)view.FindName("TextAlign")).SelectedIndex=1;
-                Call(view,"ApplyStyle",view,new RoutedEventArgs());
+                var apply=(Button)view.FindName("ApplyObjectProperties");
+                var rotate=(Button)view.FindName("RotateObjectButton");
+                var front=(Button)view.FindName("BringObjectButton");
+                var back=(Button)view.FindName("SendObjectButton");
+                void Click(Button button) {
+                    Check(button.IsEnabled,"Selected object enables "+button.Content);
+                    button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }
                 var selected=(HashSet<string>)typeof(PdfEditorView).GetField("selectedIds",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(view)!;
+                var selectedId=typeof(PdfEditorView).GetField("selectedId",BindingFlags.Instance|BindingFlags.NonPublic)!;
+                selected.Clear();selectedId.SetValue(view,"");Call(view,"DrawElements");
+                Check(!apply.IsEnabled&&!rotate.IsEnabled&&!front.IsEnabled&&!back.IsEnabled,"Object commands disabled without a selection");
+                var rectangle=view.CurrentPlan.Pages[0].Elements.Single(x=>x.Kind=="rectangle");
+                selectedId.SetValue(view,rectangle.Id);Call(view,"DrawElements");
+                ((CheckBox)view.FindName("FillShape")).IsChecked=true;
+                Click(apply);
+                Check(view.CurrentPlan.Pages[0].Elements.Single(x=>x.Id==rectangle.Id).Fill==rectangle.Color,"Fill applies through ribbon");
+                ((CheckBox)view.FindName("FillShape")).IsChecked=false;
+
+                view.AddText(280,220,"직접 수정 · 가운데 정렬");
+                var text=view.CurrentPlan.Pages[0].Elements.Last();
+                var originalSize=text.FontSize;
+                var originalColor=text.Color;
+                ((ComboBox)view.FindName("TextFont")).SelectedIndex=2;
+                Check(view.CurrentPlan.Pages[0].Elements.Single(x=>x.Id==text.Id).FontFamily=="Batang","Font applies immediately");
+                ((ComboBox)view.FindName("TextAlign")).SelectedIndex=1;
+                var aligned=view.CurrentPlan.Pages[0].Elements.Single(x=>x.Id==text.Id);
+                Check(aligned.Alignment=="center"&&aligned.FontSize==originalSize&&aligned.Color==originalColor,
+                    "Alignment applies immediately without changing size or color");
+                ((ComboBox)view.FindName("EditFontSize")).SelectedIndex=4;
+                Check(view.CurrentPlan.Pages[0].Elements.Single(x=>x.Id==text.Id).FontSize==36,"Font size applies immediately");
+                view.Undo();
+                Check(view.CurrentPlan.Pages[0].Elements.Single(x=>x.Id==text.Id).FontSize==originalSize,
+                    "Undo restores only the last formatting change");
+                Check(((Canvas)view.FindName("EditCanvas")).Children.OfType<Thumb>().Any(x=>Equals(x.Tag,"object-rotation")),"Selection has a draggable rotation handle");
+                Click(rotate);
+                Check(view.CurrentPlan.Pages[0].Elements.Single(x=>x.Id==text.Id).Rotation==90,"Rotation applies through ribbon");
+                view.Undo();
+                Click(back);
+                Check(view.CurrentPlan.Pages[0].Elements.First().Id==text.Id,"Send back applies through ribbon");
+                Click(front);
+                Check(view.CurrentPlan.Pages[0].Elements.Last().Id==text.Id,"Bring front applies through ribbon");
                 selected.UnionWith(view.CurrentPlan.Pages[0].Elements.Where(x=>x.Kind=="rectangle"||x.Kind=="ellipse").Select(x=>x.Id));
                 view.CopyObjects();view.PasteObjects();Check(view.CurrentPlan.Pages[0].Elements.Count==13,"Group copy paste");
                 Call(view,"RotateObjects",view,new RoutedEventArgs());
                 view.Undo();view.Redo();view.Undo();
-                var canvas=(Canvas)view.FindName("EditCanvas");var thumb=canvas.Children.OfType<Thumb>().Single();
+                var canvas=(Canvas)view.FindName("EditCanvas");var thumb=canvas.Children.OfType<Thumb>().Single(x=>!Equals(x.Tag,"object-rotation"));
                 thumb.RaiseEvent(new DragStartedEventArgs(0,0){RoutedEvent=Thumb.DragStartedEvent});
                 thumb.RaiseEvent(new DragDeltaEventArgs(20,20){RoutedEvent=Thumb.DragDeltaEvent});
+                foreach(var visual in canvas.Children.OfType<Border>().Where(x=>x.Tag is PdfEditElement item&&selected.Contains(item.Id)&&x.Child is Canvas))
+                {
+                    var item=(PdfEditElement)visual.Tag;
+                    var strokeCanvas=(Canvas)visual.Child;
+                    Check(strokeCanvas.Width==item.Width&&strokeCanvas.Height==item.Height&&strokeCanvas.RenderTransform.Value.IsIdentity,
+                        "Live resize uses final stroke geometry without scaling the old canvas");
+                }
                 thumb.RaiseEvent(new DragCompletedEventArgs(20,20,false){RoutedEvent=Thumb.DragCompletedEvent});
                 view.Undo();
                 Call(view,"BringForward",view,new RoutedEventArgs());Call(view,"SendBackward",view,new RoutedEventArgs());
@@ -137,7 +208,146 @@ internal static class DrawingUiTest
                 // Constructor entry path allows opening a project from the main file menu.
                 var second=new PdfEditorWindow(project);second.Show();await second.Ready.WaitAsync(TimeSpan.FromSeconds(90));Check(second.CurrentPlan.Pages[0].Elements.Count==13,"Project direct open");second.Close();
                 var main=new MainWindow();main.Show();await main.OpenFilesAsync([project]);Check(main.ActivePdfEditor?.CurrentPlan.Pages[0].Elements.Count==13,"Main file menu project route");main.Close();
-                Console.WriteLine("PASS drawings: eight tools, normalized gestures, font/alignment, group copy/paste, rotation, resize handle, z-order, undo/redo, zoom, editable project round trip/direct open, PDF export, original preserved. "+output);result=0;
+                var stampFile=Path.Combine(folder,id+"-stamp.png");
+                var stampEncoder=new PngBitmapEncoder();
+                var stampPixels=Enumerable.Repeat((byte)255,9*9*4).ToArray();
+                for(var y=2;y<7;y++)for(var x=2;x<7;x++){
+                    if(x==4&&y==4)continue;
+                    var index=(y*9+x)*4;
+                    stampPixels[index]=stampPixels[index+1]=0;
+                }
+                stampPixels[(1*9+1)*4+3]=0;
+                var opaqueStamp=BitmapSource.Create(9,9,96,96,PixelFormats.Bgra32,null,stampPixels,36);
+                var import=typeof(PdfEditorView).Assembly.GetType("Topdf.StampImportWindow")!;
+                var cutout=(BitmapSource)import.GetMethod("RemoveEdgeBackground",BindingFlags.Static|BindingFlags.NonPublic)!
+                    .Invoke(null,[opaqueStamp,Colors.White,30])!;
+                var cutPixels=new byte[stampPixels.Length];
+                cutout.CopyPixels(cutPixels,36,0);
+                Check(cutPixels[3]==0&&cutPixels[(1*9+1)*4+3]==0&&cutPixels[(2*9+2)*4+3]==255&&cutPixels[(4*9+4)*4+3]==255,
+                    "Stamp import clears only connected background and keeps ink, existing alpha and enclosed white");
+                stampEncoder.Frames.Add(BitmapFrame.Create(cutout));
+                using(var stream=File.Create(stampFile))stampEncoder.Save(stream);
+                typeof(PdfEditorView).GetField("stamp",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(view,stampFile);
+                var stampTool=(ComboBox)view.FindName("EditTool");
+                stampTool.SelectedIndex=4;
+                var stampPosition=new Point(45,160);
+                var originalCount=view.CurrentPlan.Pages[0].Elements.Count;
+                Call(view,"ShowStampPreview",stampPosition);
+                var preview=canvas.Children.OfType<Image>().Single();
+                Check(preview.Source!=null&&!preview.IsHitTestVisible&&view.CurrentPlan.Pages[0].Elements.Count==originalCount,
+                    "Stamp image follows the pointer without placing an object");
+                Call(view,"HideStampPreview");
+                Check(!canvas.Children.Contains(preview),"Leaving the page removes the preview");
+                Call(view,"ShowStampPreview",stampPosition);
+                preview=canvas.Children.OfType<Image>().Single();
+                var previewBounds=new Rect(Canvas.GetLeft(preview),Canvas.GetTop(preview),preview.Width,preview.Height);
+                Check(previewBounds.BottomLeft==stampPosition,"Stamp preview is anchored at its bottom-left corner");
+                Call(view,"PlaceStamp",stampPosition);
+                Check(!canvas.Children.Contains(preview),"Click clears preview");
+                var stamp=view.CurrentPlan.Pages[0].Elements.Last();
+                Check(previewBounds==new Rect(stamp.X,stamp.Y,stamp.Width,stamp.Height),"Stamp is placed at the preview bounds");
+                Check(stamp.Kind=="stamp"&&stampTool.SelectedIndex==1,"Placement automatically switches to selection");
+                var hit=new Point(stamp.X+stamp.Width/2,stamp.Y+stamp.Height/2);
+                Call(view,"SelectHitAnnotation",hit,false,new System.Windows.Input.MouseButtonEventArgs(
+                    System.Windows.Input.Mouse.PrimaryDevice,0,System.Windows.Input.MouseButton.Left){RoutedEvent=System.Windows.Input.Mouse.PreviewMouseDownEvent});
+                Point ChildOrigin()
+                {
+                    window.UpdateLayout();
+                    var visual=canvas.Children.OfType<Border>().Single(x=>x.Tag is PdfEditElement item&&item.Id==stamp.Id);
+                    return visual.Child.TranslatePoint(new Point(),visual);
+                }
+                selected.Clear();selectedId.SetValue(view,"");Call(view,"DrawElements");
+                var unselectedOrigin=ChildOrigin();
+                selectedId.SetValue(view,stamp.Id);Call(view,"DrawElements");
+                Check(ChildOrigin()==unselectedOrigin,"Selection outline leaves content layout unchanged");
+                var start=(Point)typeof(PdfEditorView).GetField("dragStart",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(view)!;
+                Call(view,"MoveDraggedObjects",start+new Vector(.25,.25));
+                var clicked=view.CurrentPlan.Pages[0].Elements.Single(x=>x.Id==stamp.Id);
+                Check(clicked.X==stamp.X&&clicked.Y==stamp.Y,"Pointer jitter during selection does not move the object");
+                Call(view,"MoveDraggedObjects",start+new Vector(35,22));
+                Call(view,"FinishObjectDrag");
+                PdfEditElement Stamp()=>view.CurrentPlan.Pages[0].Elements.Single(item=>item.Id==stamp.Id);
+                Check(Math.Abs(Stamp().X-stamp.X-35)<.01&&Math.Abs(Stamp().Y-stamp.Y-22)<.01,"Inserted stamp moves on both axes");
+                view.Undo();
+                Check(Math.Abs(Stamp().X-stamp.X)<.01,"Undo restores stamp position");
+                view.Redo();
+                var properties=(DockPanel)view.FindName("ObjectPropertiesPane");
+                var fields=(StackPanel)view.FindName("ObjectPropertiesFields");
+                var editScroll=(ScrollViewer)view.FindName("EditScroll");
+                Check(properties.IsVisible,"Selecting an object opens properties");
+                window.UpdateLayout();
+                Check(properties.TranslatePoint(new Point(),window).X>=editScroll.TranslatePoint(new Point(),window).X+editScroll.ActualWidth-.5,
+                    "Properties are docked beside the document");
+                Control? Property(string label)=>fields.Children.OfType<StackPanel>()
+                    .SelectMany(row=>row.Children.OfType<Control>())
+                    .SingleOrDefault(control=>System.Windows.Automation.AutomationProperties.GetName(control)==label);
+                var rotation=(ComboBox)Property("회전")!;
+                Check(Property("색상")==null&&Property("너비 (pt)")!=null,"Stamp exposes only its applicable properties");
+                rotation.SelectedItem=rotation.Items.OfType<ComboBoxItem>().Single(x=>Equals(x.Tag,"90"));
+                Check(Stamp().Rotation==90,"Docked rotation applies immediately");
+                view.Undo();Check(Stamp().Rotation==0,"Docked rotation is undoable");
+
+                var planPage=view.CurrentPlan.Pages[0];
+                var line=planPage.Elements.First(x=>x.Kind=="line");
+                selected.Clear();selected.Add(line.Id);selected.Add(rectangle.Id);selectedId.SetValue(view,line.Id);Call(view,"DrawElements");
+                Check(Property("선 종류")!=null&&Property("채움 색상")==null,"Mixed selection exposes only common fields");
+                var color=(ComboBox)Property("색상")!;
+                var white=color.Items.OfType<ComboBoxItem>().Single(x=>Equals(x.Tag,"#FFFFFF"));
+                var swatch=((StackPanel)white.Content).Children.OfType<System.Windows.Shapes.Rectangle>().Single();
+                Check(((SolidColorBrush)swatch.Fill).Color==Colors.White&&swatch.Stroke!=null,"White color sample has a visible outline");
+                var lineStyle=(ComboBox)Property("선 종류")!;
+                foreach(var (type,dashes) in new[]{("solid",0),("dotted",2),("dashed",2),("dashdot",4),("dashdotdot",6)})
+                {
+                    var option=lineStyle.Items.OfType<ComboBoxItem>().Single(x=>Equals(x.Tag,type));
+                    var sample=((StackPanel)option.Content).Children.OfType<System.Windows.Shapes.Line>().Single();
+                    Check(sample.StrokeDashArray.Count==dashes,"Line type sample matches "+type);
+                }
+                lineStyle.SelectedItem=lineStyle.Items.OfType<ComboBoxItem>().Single(x=>Equals(x.Tag,"dashdotdot"));
+                Check(view.CurrentPlan.Pages[0].Elements.Where(x=>selected.Contains(x.Id)).All(x=>x.LineStyle=="dashdotdot"),
+                    "Common properties apply to the entire selection");
+                view.Undo();
+                selected.Clear();selectedId.SetValue(view,"");Call(view,"DrawElements");
+                Check(properties.IsVisible&&fields.Children.OfType<TextBlock>().Single().Text=="선택한 객체가 없습니다.",
+                    "Clearing selection leaves properties open");
+                selectedId.SetValue(view,rectangle.Id);Call(view,"DrawElements");
+                var fill=(ComboBox)Property("채움 색상")!;
+                fill.SelectedItem=fill.Items.OfType<ComboBoxItem>().Single(x=>Equals(x.Tag,"#1755B5"));
+                var opacity=(TextBox)Property("채움 불투명도 (%)")!;
+                opacity.Text="40";
+                opacity.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                    PresentationSource.FromVisual(window),0,System.Windows.Input.Key.Enter){RoutedEvent=System.Windows.Input.Keyboard.PreviewKeyDownEvent});
+                var shape=view.CurrentPlan.Pages[0].Elements.Single(x=>x.Id==rectangle.Id);
+                Check(shape.Fill=="#1755B5"&&shape.Color==rectangle.Color&&shape.FillOpacity==.4,"Independent fill and opacity are applied");
+                var shapeBorder=canvas.Children.OfType<Border>().Single(x=>x.Tag is PdfEditElement item&&item.Id==rectangle.Id);
+                var shapeInk=((Canvas)shapeBorder.Child).Children.OfType<System.Windows.Shapes.Rectangle>().Single();
+                Check(shapeInk.Fill.Opacity==.4&&shapeInk.Stroke.Opacity==1,"Canvas applies opacity to fill only");
+                view.Undo();view.Undo();
+                await view.FitUnifiedZoomAsync(false);
+                var zoomBeforeClose=view.CurrentZoomPercent;
+                Click((Button)view.FindName("ClosePropertiesButton"));
+                Check(properties.Visibility==Visibility.Collapsed,"Close button hides the properties panel");
+                selectedId.SetValue(view,stamp.Id);Call(view,"DrawElements");
+                Check(properties.Visibility==Visibility.Collapsed,"Closed panel stays closed on selection");
+                Call(view,"ToggleObjectProperties");
+                await Task.Delay(300);
+                Check(properties.IsVisible&&Math.Abs(view.CurrentZoomPercent-zoomBeforeClose)<.01,
+                    "Menu reopens dock without changing zoom");
+                var rotationSnapshot=Call(view,"Capture")!;
+                var originalStamp=Stamp();
+                var stampSelection=(List<PdfEditElement>)Call(view,"Objects")!;
+                var pivot=new Point(originalStamp.X+originalStamp.Width/2,originalStamp.Y+originalStamp.Height/2);
+                Check((bool)Call(view,"RotateSelectionFrom",stampSelection,new[]{originalStamp},pivot,37)!,"Free rotation fits");
+                Call(view,"Commit",rotationSnapshot);
+                Check(Stamp().Rotation==37&&Math.Abs(Stamp().X-originalStamp.X)<.001&&Math.Abs(Stamp().Y-originalStamp.Y)<.001,
+                    "Free rotation keeps the center and records a non-right angle");
+                view.Undo();Check(Stamp().Rotation==0,"Free rotation Undo");
+                view.Redo();Check(Stamp().Rotation==37,"Free rotation Redo");
+                var stampProject=Path.Combine(folder,id+"-stamp.topdf");
+                await view.SaveProjectAsync(stampProject);
+                await view.LoadProjectAsync(stampProject);
+                Check(Math.Abs(Stamp().X-stamp.X-35)<.01&&Stamp().Rotation==37&&File.Exists(Stamp().ImagePath),"Moved and freely rotated stamp persists in reopened project");
+                await view.SaveCopyAsync(Path.Combine(folder,id+"-stamp.pdf"));
+                Console.WriteLine("PASS drawings and docked properties: stamp placement, move, undo/redo and export, eight tools, normalized gestures, font/alignment, group copy/paste, rotation, resize handle, z-order, undo/redo, zoom, editable project round trip/direct open, PDF export, original preserved. "+output);result=0;
             }catch(Exception ex){Console.Error.WriteLine(ex);}
             finally{typeof(PdfEditorView).GetField("addedTextCommit",BindingFlags.NonPublic|BindingFlags.Instance)!.SetValue(window.View,null);typeof(PdfEditorView).GetField("dirty",BindingFlags.NonPublic|BindingFlags.Instance)!.SetValue(window.View,false);window.Close();app.Shutdown();}
         };app.Run();return result;

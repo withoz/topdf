@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Topdf;
 internal static class CommandsUiTest
@@ -30,21 +31,21 @@ internal static class CommandsUiTest
                 Check(ApplicationCommands.Undo.InputGestures.OfType<KeyGesture>().Any(x=>x.Key==Key.Z&&x.Modifiers==ModifierKeys.Control),"Windows Ctrl+Z gesture registered");
                 Check(view.InputBindings.OfType<KeyBinding>().Any(x=>x.Key==Key.Z&&x.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)&&x.Command==ApplicationCommands.Redo),"Ctrl+Shift+Z redo alias");
                 Call(view,"BeginGraphic",new Point(60,120));Check(ReferenceEquals(Keyboard.FocusedElement,canvas),"Drawing takes keyboard focus away from page field");
-                Call(view,"UpdateGraphic",new Point(240,180));Call(view,"EndGraphic");var arrowId=view.CurrentPlan.Pages[0].Elements.Single().Id;
+                Call(view,"BeginGraphic",new Point(240,180));Call(view,"EndGraphic");var arrowId=view.CurrentPlan.Pages[0].Elements.Single().Id;
                 Check(ApplicationCommands.Undo.CanExecute(null,canvas),"Undo available after draw");CommandManager.InvalidateRequerySuggested();await Dispatcher.Yield(DispatcherPriority.Background);Check(((Button)view.FindName("UndoButton")).IsEnabled,"Undo ribbon enabled after draw");typeof(Button).GetMethod("OnClick",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke((Button)view.FindName("UndoButton"),null);Check(view.CurrentPlan.Pages[0].Elements.Count==0,"Routed Undo removes one stroke");
                 CommandManager.InvalidateRequerySuggested();await Dispatcher.Yield(DispatcherPriority.Background);
                 Check(!((Button)view.FindName("UndoButton")).IsEnabled&&((Button)view.FindName("RedoButton")).IsEnabled,"Ribbon reflects undo/redo availability");
                 ApplicationCommands.Redo.Execute(null,canvas);Check(view.CurrentPlan.Pages[0].Elements.Count==1,"Routed Redo restores stroke");
-                var history=History(view);((ComboBox)view.FindName("EditZoom")).Focus();Call(view,"BeginGraphic",new Point(70,240));Check(ReferenceEquals(Keyboard.FocusedElement,canvas),"Drawing takes focus from zoom control");Call(view,"UpdateGraphic",new Point(210,280));ApplicationCommands.Undo.Execute(null,canvas);
+                var history=History(view);selector.SelectedIndex=12;((ComboBox)view.FindName("EditZoom")).Focus();Call(view,"BeginGraphic",new Point(70,240));Check(ReferenceEquals(Keyboard.FocusedElement,canvas),"Drawing takes focus from zoom control");Call(view,"UpdateGraphic",new Point(210,280));ApplicationCommands.Undo.Execute(null,canvas);
                 Check(view.CurrentPlan.Pages[0].Elements.Count==1&&History(view)==history,"Undo during draw cancels pending stroke only");ApplicationCommands.Undo.Execute(null,canvas);Check(view.CurrentPlan.Pages[0].Elements.Count==0,"Earlier undo history remains intact");ApplicationCommands.Redo.Execute(null,canvas);
                 selector.SelectedIndex=7;Call(view,"BeginGraphic",new Point(80,300));Call(view,"UpdateGraphic",new Point(200,370));Call(view,"EndGraphic");ApplicationCommands.Undo.Execute(null,canvas);
                 selector.SelectedIndex=8;Call(view,"BeginGraphic",new Point(280,300));Call(view,"UpdateGraphic",new Point(380,370));Call(view,"EndGraphic");Check(!ApplicationCommands.Redo.CanExecute(null,canvas),"New edit clears redo branch");
                 selector.SelectedIndex=1;Set(view,"selectedId",arrowId);((HashSet<string>)Field(view,"selectedIds")!).Clear();Call(view,"DrawElements");
-                var thumb=canvas.Children.OfType<Thumb>().Last();var before=Plan(view);history=History(view);
+                var thumb=canvas.Children.OfType<Thumb>().Last(x=>!Equals(x.Tag,"object-rotation"));var before=Plan(view);history=History(view);
                 thumb.RaiseEvent(new DragStartedEventArgs(0,0){RoutedEvent=Thumb.DragStartedEvent});thumb.RaiseEvent(new DragDeltaEventArgs(20,25){RoutedEvent=Thumb.DragDeltaEvent});Check(Plan(view)!=before,"Endpoint gesture changes model temporarily");
                 ApplicationCommands.Undo.Execute(null,canvas);Check(Plan(view)==before&&History(view)==history,"Undo cancels active endpoint gesture without consuming history");
                 var shapeId=view.CurrentPlan.Pages[0].Elements.Single(x=>x.Kind=="ellipse").Id;Set(view,"selectedId",shapeId);((HashSet<string>)Field(view,"selectedIds")!).Clear();Call(view,"DrawElements");
-                var resize=canvas.Children.OfType<Thumb>().Single();before=Plan(view);history=History(view);
+                var resize=canvas.Children.OfType<Thumb>().Single(x=>!Equals(x.Tag,"object-rotation"));before=Plan(view);history=History(view);
                 resize.RaiseEvent(new DragStartedEventArgs(0,0){RoutedEvent=Thumb.DragStartedEvent});resize.RaiseEvent(new DragDeltaEventArgs(30,0){RoutedEvent=Thumb.DragDeltaEvent});ApplicationCommands.Undo.Execute(null,canvas);
                 resize.RaiseEvent(new DragCompletedEventArgs(30,0,false){RoutedEvent=Thumb.DragCompletedEvent});Check(Plan(view)==before&&History(view)==history,"Resize cancel and late mouse-up do not commit again");
                 ApplicationCommands.SelectAll.Execute(null,canvas);before=Plan(view);history=History(view);
@@ -71,13 +72,19 @@ internal static class CommandsUiTest
                 Call(view,"BeginGraphic",new Point(140,50));Call(view,"BeginGraphic",new Point(140,150));Call(view,"BeginGraphic",new Point(140,150));
                 Check(view.CurrentPlan.Pages[0].Elements.Count==lineCount+2&&History(view)==history+2,"Each nonzero segment is a separate undo unit");
                 var lines=view.CurrentPlan.Pages[0].Elements.TakeLast(2).ToArray();
-                Point Endpoint(PdfEditElement item,int index)=>new(item.X+item.Points[index][0]*item.Width,item.Y+item.Points[index][1]*item.Height);
+                Point Endpoint(PdfEditElement item,int index)
+                {
+                    var visual=canvas.Children.OfType<Border>().Single(b=>b.Tag is PdfEditElement graphic&&graphic.Id==item.Id);
+                    var stroke=((Canvas)visual.Child).Children.OfType<System.Windows.Shapes.Polyline>().Single();
+                    Check(stroke.StrokeStartLineCap==PenLineCap.Round&&stroke.StrokeEndLineCap==PenLineCap.Round,"Solid line caps cover the corner");
+                    return stroke.Points[index]+new Vector(Canvas.GetLeft(visual),Canvas.GetTop(visual));
+                }
                 Check((Endpoint(lines[0],1)-Endpoint(lines[1],0)).Length<.001,"Adjacent endpoints coincide");
                 Call(view,"PreviewContinuousLine",new Point(220,220));Call(view,"EndGraphic");
                 Check(view.CurrentPlan.Pages[0].Elements.Count==lineCount+2&&Field(view,"continuousLineStart")==null,"Finish discards preview, retains committed segments");
                 ApplicationCommands.Undo.Execute(null,canvas);Check(view.CurrentPlan.Pages[0].Elements.Count==lineCount+1,"Undo removes only last segment");
                 ApplicationCommands.Redo.Execute(null,canvas);Check(view.CurrentPlan.Pages[0].Elements.Count==lineCount+2,"Redo restores segment");
-                Call(view,"BeginGraphic",new Point(200,200));Call(view,"StopDrawingAndSelect");Check(selector.SelectedIndex==1&&Field(view,"continuousLineStart")==null,"Esc path finishes chain into selection");
+                Call(view,"BeginGraphic",new Point(200,200));Call(view,"StopToolAndSelect");Check(selector.SelectedIndex==1&&Field(view,"continuousLineStart")==null,"Esc path finishes chain into selection");
                 selector.SelectedIndex=5;Call(view,"BeginGraphic",new Point(200,200));selector.SelectedIndex=6;Check(Field(view,"continuousLineStart")==null,"Changing tools clears chain");
                 selector.SelectedIndex=1;var styled=view.CurrentPlan.Pages[0].Elements.Last();Set(view,"selectedId",styled.Id);((HashSet<string>)Field(view,"selectedIds")!).Clear();Call(view,"DrawElements");
                 var lineTypes=(ComboBox)view.FindName("LineType");

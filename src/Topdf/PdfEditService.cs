@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 
@@ -25,6 +25,8 @@ public sealed class PdfEditElement
     public string? LineStyle { get; set; }
     public bool AutoWidth { get; set; }
     public string Fill { get; set; } = "none";
+    public bool FillUsesStrokeColor { get; set; }
+    public double FillOpacity { get; set; } = 1;
     public string Alignment { get; set; } = "left";
     public string FontFamily { get; set; } = "Malgun Gothic";
     public List<double[]> Points { get; set; } = [];
@@ -54,34 +56,65 @@ public static class PdfEditService
     public static async Task<PdfEditInfo> InspectAsync(string source, string folder, CancellationToken cancellation)
     {
         var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".json");
-        await RunAsync(["inspect", source, output], cancellation);
-        return JsonSerializer.Deserialize<PdfEditInfo>(await File.ReadAllTextAsync(output, cancellation), Json)!;
+        try {
+            await RunAsync(["inspect", source, output], cancellation);
+            return JsonSerializer.Deserialize<PdfEditInfo>(await File.ReadAllTextAsync(output, cancellation), Json)
+                ?? throw new InvalidDataException("PDF 페이지 정보를 읽을 수 없습니다.");
+        } finally { TryRemoveTemporaryFile(output); }
     }
-    public static async Task<PdfSourceText[]> TextAsync(string source, string folder, int page, CancellationToken cancellation)
+    public static async Task<PdfSourceText[]> TextAsync(string source, string folder, int page, CancellationToken cancellation, bool includeInvisible=false)
     {
         var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".json");
-        await RunAsync(["text", source, output, "--page", page.ToString()], cancellation);
-        return JsonSerializer.Deserialize<PdfSourceText[]>(await File.ReadAllTextAsync(output, cancellation), Json)!;
+        var arguments=new List<string>{"text",source,output,"--page",page.ToString()};
+        if(includeInvisible)arguments.Add("--include-invisible");
+        try {
+            await RunAsync(arguments.ToArray(),cancellation);
+            return JsonSerializer.Deserialize<PdfSourceText[]>(await File.ReadAllTextAsync(output, cancellation), Json)
+                ?? throw new InvalidDataException("PDF 텍스트 정보를 읽을 수 없습니다.");
+        } finally { TryRemoveTemporaryFile(output); }
     }
     public static async Task<string> RenderAsync(string source, string folder, int page, int rotation, CancellationToken cancellation, PdfEditPlan? plan = null, int maxSize=1800)
     {
         var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".png");
         var arguments = new List<string> { "render", source, output, "--page", page.ToString(), "--rotation", rotation.ToString(),"--max-size",Math.Clamp(maxSize,160,3600).ToString() };
-        if (plan != null) {
-            var specification = Path.Combine(folder, Guid.NewGuid().ToString("N")+".json");
-            await File.WriteAllTextAsync(specification, JsonSerializer.Serialize(plan, Json), cancellation);
-            arguments.AddRange(["--plan", specification]);
+        var replacements=plan?.Pages.FirstOrDefault(item=>item.SourceIndex==page)?.Elements.Where(item=>item.Kind=="replace").ToList();
+        string? specification=null;
+        try {
+            if(replacements is {Count:>0}) {
+                specification=Path.Combine(folder,Guid.NewGuid()+".json");
+                var renderPlan=new PdfEditPlan{SourceSha256=plan!.SourceSha256,Pages=[new(){SourceIndex=page,Elements=replacements}]};
+                await File.WriteAllTextAsync(specification,JsonSerializer.Serialize(renderPlan,Json),cancellation);
+                arguments.AddRange(["--plan",specification]);
+            }
+            await RunAsync(arguments.ToArray(),cancellation);
+        } finally {
+            if(specification!=null)TryRemoveTemporaryFile(specification);
         }
-        await RunAsync(arguments.ToArray(), cancellation);
         return output;
     }
     public static async Task<string> ExportAsync(string source, string folder, PdfEditPlan plan, CancellationToken cancellation)
     {
         var specification = Path.Combine(folder, Guid.NewGuid().ToString("N")+".json");
         var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".pdf");
-        await File.WriteAllTextAsync(specification, JsonSerializer.Serialize(plan, Json), cancellation);
-        await RunAsync(["export", source, output, "--plan", specification], cancellation);
-        return output;
+        try {
+            await File.WriteAllTextAsync(specification, JsonSerializer.Serialize(plan, Json), cancellation);
+            await RunAsync(["export", source, output, "--plan", specification], cancellation);
+            return output;
+        } catch {
+            TryRemoveTemporaryFile(output);
+            throw;
+        } finally { TryRemoveTemporaryFile(specification); }
+    }
+    public static async Task<string> AppendPagesAsync(string source,string extra,string folder,CancellationToken cancellation)
+    {
+        var output=Path.Combine(folder,Guid.NewGuid()+".pdf");
+        try {
+            await RunAsync(["append",source,output,"--append",extra],cancellation);
+            return output;
+        } catch {
+            if(File.Exists(output))File.Delete(output);
+            throw;
+        }
     }
     public static async Task SaveNewAsync(string source, string destination, CancellationToken cancellation)
     {
@@ -96,8 +129,16 @@ public static class PdfEditService
             }
         } catch { if (created) File.Delete(destination); throw; }
     }
+    static void TryRemoveTemporaryFile(string path)
+    {
+        try { File.Delete(path); }
+        catch(IOException) {}
+        catch(UnauthorizedAccessException) {}
+    }
+
     static async Task RunAsync(string[] arguments, CancellationToken cancellation)
     {
+        cancellation.ThrowIfCancellationRequested();
         var info = new ProcessStartInfo(AppPaths.Python) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding=System.Text.Encoding.UTF8, StandardErrorEncoding=System.Text.Encoding.UTF8 };
         info.Environment["PYTHONUTF8"] = "1";
         info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "engines", "pdf_edit.py"));

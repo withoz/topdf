@@ -1,4 +1,4 @@
-"""PDFium text-object selection/removal. No raster cover-up and no new runtime."""
+﻿"""PDFium text-object selection/removal. No raster cover-up and no new runtime."""
 from contextlib import closing
 from collections import Counter
 import ctypes
@@ -76,7 +76,7 @@ def objects(page):
     return result
 
 
-def groups(page, pdf_page, geometry):
+def groups(page, pdf_page, geometry, include_invisible=False):
     handles = objects(page); chunks = {}
     with closing(page.get_textpage()) as text:
         if text.count_chars() > 200000: raise ValueError('페이지의 글자가 너무 많습니다.')
@@ -101,7 +101,7 @@ def groups(page, pdf_page, geometry):
             if value.strip() and box[2] > box[0] and box[3] > box[1]: record['boxes'].append(box)
     records = []
     for c in chunks.values():
-        if any(g['mode'] not in (0,1,2) for g in c['glyphs']) or c['angled'] or not c['text'].strip() or '\ufffd' in c['text'] or not c['boxes']: continue
+        if any(g['mode'] not in ((0,1,2,3) if include_invisible else (0,1,2)) for g in c['glyphs']) or c['angled'] or not c['text'].strip() or '\ufffd' in c['text'] or not c['boxes']: continue
         boxes = c.pop('boxes')
         c['box'] = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
         l,b,r,t = c['box']
@@ -166,13 +166,13 @@ def groups(page, pdf_page, geometry):
     return output
 
 
-def text_layer(path,index,geometry):
+def text_layer(path,index,geometry,include_invisible=False):
     reader=PdfReader(path)
     try: source=editable_page(path,index)
     except ValueError:return []
     with pdfium.PdfDocument(source) as document:
         with closing(document[0]) as page:
-            return [{k:v for k,v in g.items() if not k.startswith('_')} for g in groups(page,reader.pages[index],geometry)]
+            return [{k:v for k,v in g.items() if not k.startswith('_')} for g in groups(page,reader.pages[index],geometry,include_invisible)]
 
 
 def cleaned_page(path,index,elements,geometry,rotation=0):

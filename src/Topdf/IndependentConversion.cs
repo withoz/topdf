@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 
@@ -6,10 +6,10 @@ namespace Topdf;
 
 public static class IndependentConversion
 {
-    public static bool Supports(string path) => Path.GetExtension(path).ToLowerInvariant() is ".hwp" or ".hwpx" or ".docx" or ".xls" or ".xlsx" or ".dwg" or ".dxf" or ".pdf";
+    public static bool Supports(string path) => Path.GetExtension(path).ToLowerInvariant() is ".hwp" or ".hwpx" or ".docx" or ".pptx" or ".xls" or ".xlsx" or ".dwg" or ".dxf" or ".pdf";
     public static string EngineName(string path) => Path.GetExtension(path).ToLowerInvariant() switch {
         ".hwp" or ".hwpx" => "rhwp 0.8.7 · 머리글·꼬리글 보정",
-        ".docx" => "office2pdf 0.10.0",
+        ".docx" or ".pptx" => "office2pdf 0.10.0",
         ".xlsx" => "MiniPdf 0.43.2",
         ".xls" => "Ream 1.33.1 · 병합 셀 보정",
         ".dwg" => "LibreDWG 0.14 + ezdxf",
@@ -34,7 +34,7 @@ public static class IndependentConversion
                 executable = Path.Combine(vendor, "rhwp", "rhwp.exe");
                 arguments = ["export-pdf", input, "-o", pdf, "--font-path", Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "--fallback-mono", "Malgun Gothic", "--profile", "print", "--json"];
                 break;
-            case ".docx":
+            case ".docx": case ".pptx":
                 executable = Path.Combine(vendor, "office2pdf", "office2pdf.exe");
                 arguments = [input, "-o", pdf, "--font-path", Environment.GetFolderPath(Environment.SpecialFolder.Fonts)];
                 break;

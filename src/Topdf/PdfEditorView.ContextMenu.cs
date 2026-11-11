@@ -14,7 +14,7 @@ public partial class PdfEditorView
         CancelPendingEditGesture();FinishAreaSelection(true);ApplyInlineText();annotationContextPoint=point;
         if(pointer){var hit=AnnotationAt(point,false);
             if(hit==null){selectedIds.Clear();selectedId="";selectedSource=null;DrawElements();}
-            else if(!Objects().Any(x=>x.Id==hit.Id)){selectedIds.Clear();selectedIds.Add(hit.Id);selectedId=hit.Id;selectedSource=null;DrawElements();}
+            else if(!Objects().Any(x=>x.Id==hit.Id)){selectedIds.Clear();selectedIds.Add(hit.Id);selectedId=hit.Id;selectedSource=null;SyncRibbonObjectProperties(hit);DrawElements();}
         }
         BuildAnnotationContextMenu();
     }

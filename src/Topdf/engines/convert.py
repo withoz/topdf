@@ -184,8 +184,11 @@ def main():
     except Exception as error:
         Path(str(target)+'.error.txt').write_text(str(error), encoding='utf-8')
         raise
-    if not target.is_file() or not target.read_bytes().startswith(b'%PDF-'):
+    if not target.is_file():
         raise RuntimeError('유효한 PDF가 생성되지 않았습니다.')
+    with target.open('rb') as stream:
+        if stream.read(5) != b'%PDF-':
+            raise RuntimeError('유효한 PDF가 생성되지 않았습니다.')
 
 
 if __name__ == '__main__':

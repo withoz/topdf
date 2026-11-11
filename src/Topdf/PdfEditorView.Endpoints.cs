@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -8,7 +8,7 @@ public partial class PdfEditorView
 {
     Point[] GraphicEndpoints(PdfEditElement item)
     {
-        var inset=Math.Min(item.StrokeWidth/2,Math.Min(item.Width,item.Height)/2);
+        var inset=GraphicInset(item);
         var transform=new RotateTransform(item.Rotation,item.X+item.Width/2,item.Y+item.Height/2);
         return item.Points.Select(p=>transform.Transform(new Point(item.X+inset+p[0]*(item.Width-2*inset),item.Y+inset+p[1]*(item.Height-2*inset)))).ToArray();
     }
@@ -21,7 +21,7 @@ public partial class PdfEditorView
         item.X=Math.Max(0,Math.Min(a.X,b.X)-pad);item.Y=Math.Max(0,Math.Min(a.Y,b.Y)-pad);
         item.Width=Math.Min(size.W,Math.Max(a.X,b.X)+pad)-item.X;
         item.Height=Math.Min(size.H,Math.Max(a.Y,b.Y)+pad)-item.Y;item.Rotation=0;
-        var inset=Math.Min(item.StrokeWidth/2,Math.Min(item.Width,item.Height)/2);
+        var inset=GraphicInset(item);
         var w=Math.Max(.001,item.Width-2*inset);var h=Math.Max(.001,item.Height-2*inset);
         item.Points=new[]{a,b}.Select(p=>new[]{Math.Clamp((p.X-item.X-inset)/w,0,1),Math.Clamp((p.Y-item.Y-inset)/h,0,1)}).ToList();
     }
@@ -35,7 +35,7 @@ public partial class PdfEditorView
             Action? cancel=null;
             thumb.DragStarted+=(_,_)=>{
                 Keyboard.Focus(EditCanvas);before=Capture();original=GraphicEndpoints(item);delta=new();
-                cancel=()=>{var snapshot=before;before=null;thumb.CancelDrag();if(snapshot!=null){Restore(snapshot);dirty=!IsClean();}};cancelEditGesture=cancel;CommandManager.InvalidateRequerySuggested();
+                cancel=()=>{var snapshot=before;before=null;thumb.CancelDrag();if(snapshot!=null){Restore(snapshot);SetDirty(!IsClean());}};cancelEditGesture=cancel;CommandManager.InvalidateRequerySuggested();
             };
             thumb.DragDelta+=(_,e)=>{
                 if(before==null)return;delta+=new Vector(e.HorizontalChange,e.VerticalChange);
@@ -46,7 +46,7 @@ public partial class PdfEditorView
             thumb.DragCompleted+=(_,e)=>{
                 if(ReferenceEquals(cancelEditGesture,cancel))cancelEditGesture=null;
                 var snapshot=before;before=null;if(snapshot==null)return;
-                if(e.Canceled){Restore(snapshot);dirty=!IsClean();}
+                if(e.Canceled){Restore(snapshot);SetDirty(!IsClean());}
                 else if(delta.LengthSquared>.0001)Commit(snapshot);else DrawElements();
                 CommandManager.InvalidateRequerySuggested();
             };

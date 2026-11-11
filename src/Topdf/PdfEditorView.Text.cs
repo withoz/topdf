@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -24,8 +24,15 @@ public partial class PdfEditorView
         var item=DisplayText(source);var existing=Page?.Elements.FirstOrDefault(x=>x.SourceTextId==source.Id);
         return existing==null?item:item with {EditX=existing.X,EditY=existing.Y,EditWidth=existing.Width,EditHeight=existing.Height,Rotation=existing.Rotation,FontSize=existing.FontSize,Color=existing.Color,FontFamily=existing.FontFamily};
     }
+    void RefreshTextAvailability()
+    {
+        EditCanvas.ToolTip=Tool=="본문"&&!SourceTextItems.Any()
+            ? (BuildFeatures.SmartEnabled ? "이 쪽에서 수정할 수 있는 텍스트가 없습니다. 목차에서 현재 쪽 OCR을 사용할 수 있습니다." : "이 쪽에서 수정할 수 있는 텍스트가 없습니다.")
+            : null;
+    }
     void DrawSourceTexts()
     {
+        RefreshTextAvailability();
         foreach(var original in SourceTextItems) {
             if(Page!.Elements.Any(e=>e.SourceTextId==original.Id)) continue;
             var item=DisplayText(original);
@@ -54,7 +61,6 @@ public partial class PdfEditorView
         inlineText.TextChanged+=(_,_)=> { if(inlineText!=null) { EditText.Text=inlineText.Text;ResizeInput();QueueInlinePreview(); } };
         inlineText.PreviewKeyDown+=(_,e)=> {
             if(e.Key==Key.Enter && Keyboard.Modifiers!=ModifierKeys.Shift) { ApplyInlineText();e.Handled=true; }
-            else if(e.Key==Key.Escape) { selectedSource=null;DrawElements();e.Handled=true; }
         };
         inlineText.LostKeyboardFocus+=(_,_)=> { if(!selectingText) ApplyInlineText(); };
         Canvas.SetLeft(inlineText,selected.EditX);Canvas.SetTop(inlineText,selected.EditY);EditCanvas.Children.Add(inlineText);AttachPdfCarets(selectedSource);BeginLiveText(selectedSource);
@@ -75,10 +81,10 @@ public partial class PdfEditorView
         ApplyInlineText();
         selectedIds.Clear(); selectedSource=SourceTextItems.Single(t=>t.Id==id);selectedId="";
         var current=EditingText(selectedSource);
-        EditText.Text=Page!.Elements.FirstOrDefault(x=>x.SourceTextId==id)?.Text??selectedSource.Text;SelectFont(current.FontSize,current.Color);SelectOriginalFont(current.FontFamily);
+        EditText.Text=Page!.Elements.FirstOrDefault(x=>x.SourceTextId==id)?.Text??selectedSource.Text;SyncTextFormat(current.FontSize,current.Color,current.FontFamily,Page.Elements.FirstOrDefault(x=>x.SourceTextId==id)?.Alignment);
         DrawElements();inlineText?.Focus();inlineText?.SelectAll();DrawPdfCarets();
         if(Page.Elements.Any(x=>x.SourceTextId==id))QueueInlinePreview();
-        EditStatus.Text="본문을 직접 입력한 뒤 Enter로 적용하세요. Esc는 선택 취소입니다.";
+        EditStatus.Text="본문을 직접 입력한 뒤 Enter로 적용하세요. Esc는 입력을 마치고 선택 도구로 돌아갑니다.";
     }
     void ApplyInlineText()
     {
@@ -86,17 +92,25 @@ public partial class PdfEditorView
         if(selectedSource==null || inlineText==null || selectingText || saving) return;
         var text=inlineText.Text;var original=selectedSource;
         if(text==(Page?.Elements.FirstOrDefault(x=>x.SourceTextId==original.Id)?.Text??original.Text)) return;
-        inlineText=null;ReplaceSourceText(original.Id,text);
+        ReplaceSourceText(original.Id,text);
     }
-    public void ReplaceSourceText(string id,string text)
+    public void ReplaceSourceText(string id,string text) => ReplaceSourceText(id,text,null);
+
+    void ReplaceSourceText(string id,string text,string? alignment)
     {
         if(Page==null || info==null || saving) return;
         if(text.Length>5000) {EditStatus.Text="본문은 5000자까지 수정할 수 있습니다.";return;}
         var original=SourceTextItems.Single(t=>t.Id==id);var item=EditingText(original);
         var element=ReplacementLayout(item,text,FontSizeValue,ColorValue);
         element.Kind="replace";element.PreserveSourceStyle=true;var family=((ComboBoxItem)TextFont.SelectedItem).Content.ToString()!;if(family!=item.FontFamily){element.FontFamily=family;element.PreserveSourceStyle=false;}element.SourceTextId=id;element.SourceText=original.Text;
+        var previous=Page.Elements.FirstOrDefault(x=>x.SourceTextId==id);
+        element.Alignment=alignment??previous?.Alignment??"left";
+        element.PreserveSourceStyle &= previous?.PreserveSourceStyle!=false && element.Alignment=="left";
+        if(!element.PreserveSourceStyle)
+            element.Height=Math.Max(element.Height,TextHeight(element));
         try { Clamp(element); } catch(Exception ex) {EditStatus.Text=ex.Message;return;}
-        KeepVisibleInlineDraft();
+        if(inlineText!=null && selectedSource?.Id==id)
+            KeepVisibleInlineDraft(element.PreserveSourceStyle);
         var before=Capture();Page.Elements.RemoveAll(e=>e.SourceTextId==id);Page.Elements.Add(element);
         selectedSource=null;selectedId=element.Id;Commit(before);_ = RenderPageAsync();
     }

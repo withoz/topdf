@@ -1,4 +1,4 @@
-"""Check all basic dash arrays in exported PDF and legacy project compatibility."""
+﻿"""Check all basic dash arrays in exported PDF and legacy project compatibility."""
 from pathlib import Path
 import hashlib,json,subprocess,re
 import fitz
@@ -15,6 +15,11 @@ for i,key in enumerate([*styles,'legacy','explicit-solid']):
  elif key=='explicit-solid':item.update(lineStyle='solid',dashed=True)
  else:item['lineStyle']=key
  elements.append(item)
+# Two padded segments meet at (190, 610), including after PDF rendering.
+elements.extend([
+ dict(kind='line', x=38, y=608, width=154, height=4, strokeWidth=2, points=[[2/154,.5],[152/154,.5]]),
+ dict(kind='line', x=188, y=608, width=4, height=84, strokeWidth=2, points=[[.5,2/84],[.5,82/84]]),
+])
 plan=dict(sourceSha256=hashlib.sha256(source.read_bytes()).hexdigest(),pages=[dict(sourceIndex=0,elements=elements)])
 spec=root/'plan.json';output=root/'lines.pdf'
 def export(ok=True):
@@ -24,10 +29,13 @@ def export(ok=True):
  assert (r.returncode==0)==ok,r.stderr
 export()
 with fitz.open(output) as doc:
- drawings=doc[0].get_drawings();assert len(drawings)==7
+ drawings=doc[0].get_drawings();assert len(drawings)==9
  for drawing,key in zip(drawings,[*styles,'dashed','solid']):
   dash=drawing['dashes'];actual=[float(x) for x in re.findall(r'[\d.]+',dash.split(']')[0])]
   assert actual==[2*v for v in styles[key]],(key,dash)
+ a,b=drawings[-2:]
+ assert (a['items'][0][2]-b['items'][0][1]).norm()<.001
+ assert a['lineCap']==b['lineCap']==(1,1,1)
  doc[0].get_pixmap().save(root/'lines.png')
 for value in ['invalid',['dashed'],42]:
  plan['pages'][0]['elements'][0]['lineStyle']=value;export(False)

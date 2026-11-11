@@ -10,14 +10,27 @@ public partial class PdfEditorView
     string inlineExactText="";
     Point[]? inlineLiveStops;
     CancellationTokenSource? inlineBackground;
+    void UpdateInlineBasePage(ImageSource image)
+    {
+        if(inlineText==null||selectedSource==null)return;
+        inlineExactPage=image;
+        inlineExactText=Page?.Elements.FirstOrDefault(x=>x.SourceTextId==selectedSource.Id)?.Text??selectedSource.Text;
+        RestartCleanPage(selectedSource);
+        if(inlineText.Text==inlineExactText)DrawLiveText();
+        QueueInlinePreview();
+    }
     void BeginLiveText(PdfSourceText source)
     {
-        inlineBackground?.Cancel();inlineBackground?.Dispose();
-        inlineBackground=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         inlineCleanPage=null;inlineExactPage=EditPageImage.Source;inlineLiveStops=null;inlineExactText=inlineText?.Text??"";
         inlineLiveInk=new Image {IsHitTestVisible=false,Width=EditCanvas.Width,Height=EditCanvas.Height,Stretch=Stretch.Fill};
         EditCanvas.Children.Add(inlineLiveInk);
         if(pdfCaretLayer!=null)Panel.SetZIndex(pdfCaretLayer,20);
+        RestartCleanPage(source);
+    }
+    void RestartCleanPage(PdfSourceText source)
+    {
+        inlineBackground?.Cancel();inlineBackground?.Dispose();
+        inlineBackground=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         _=PrepareLiveTextAsync(source,inlineText,renderVersion,inlineBackground.Token);
     }
     async Task PrepareLiveTextAsync(PdfSourceText source,TextBox? input,long version,CancellationToken token)
@@ -77,8 +90,12 @@ public partial class PdfEditorView
         }
         inlineLiveStops=stops.ToArray();var image=new DrawingImage(drawing);image.Freeze();inlineLiveInk.Source=image;EditPageImage.Source=inlineCleanPage;DrawPdfCarets();
     }
-    void KeepVisibleInlineDraft()
+    void KeepVisibleInlineDraft(bool preserveSourceStyle)
     {
+        if(!preserveSourceStyle){
+            if(inlineCleanPage!=null)EditPageImage.Source=inlineCleanPage;
+            return;
+        }
         if(inlineLiveInk?.Source is not {} ink||EditPageImage.Source is not {} page)return;
         var combined=new DrawingGroup();using(var dc=combined.Open()){
             var bounds=new Rect(0,0,EditCanvas.Width,EditCanvas.Height);

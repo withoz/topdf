@@ -1,4 +1,4 @@
-"""Snapshot-based PDF overlay editing. Includes PDFium text-object replacement."""
+﻿"""Snapshot-based PDF overlay editing. Includes PDFium text-object replacement."""
 import argparse
 import hashlib
 import io
@@ -95,8 +95,10 @@ def draw_element(canvas, element, width, height, font):
     from PIL import Image
     x, y, w, h = [scalar(element[key]) for key in ('x', 'y', 'width', 'height')]
     angle = int(element.get('rotation', 0))
-    if angle not in (0, 90, 180, 270) or min(w, h) <= 0: raise ValueError('잘못된 편집 항목 크기입니다.')
-    cw, ch = (h, w) if angle in (90, 270) else (w, h)
+    if not 0 <= angle < 360 or min(w, h) <= 0: raise ValueError('잘못된 편집 항목 크기입니다.')
+    radians = math.radians(angle)
+    cosine, sine = abs(math.cos(radians)), abs(math.sin(radians))
+    cw, ch = w*cosine+h*sine, w*sine+h*cosine
     cx, cy = x+w/2, y+h/2
     if cx-cw/2 < -.5 or cy-ch/2 < -.5 or cx+cw/2 > width+.5 or cy+ch/2 > height+.5: raise ValueError('편집 항목을 페이지 안으로 옮겨 주세요.')
     kind = element['kind']
@@ -107,6 +109,7 @@ def draw_element(canvas, element, width, height, font):
         if kind in ('line', 'arrow', 'rectangle', 'ellipse', 'highlight', 'underline', 'strikeout', 'freehand'):
             color = element.get('color', '#111111')
             fill = element.get('fill', 'none')
+            if fill != 'none' and element.get('fillUsesStrokeColor'): fill = color
             if not re.fullmatch(r'#[0-9a-fA-F]{6}', color) or (fill != 'none' and not re.fullmatch(r'#[0-9a-fA-F]{6}', fill)): raise ValueError('잘못된 도형 색상')
             stroke = scalar(element.get('strokeWidth', 2))
             if not .1 <= stroke <= 20: raise ValueError('잘못된 선 두께')
@@ -116,10 +119,16 @@ def draw_element(canvas, element, width, height, font):
             patterns = {'solid': [], 'dotted': [1,2], 'dashed': [4,3], 'dashdot': [8,3,1,3], 'dashdotdot': [8,3,1,3,1,3]}
             if not isinstance(line_style, str) or line_style not in patterns: raise ValueError('잘못된 선종류')
             canvas.setDash([stroke*v for v in patterns[line_style]])
-            inset = min(stroke/2, w/2, h/2)
+            # Continuous line vertices are already stored as exact endpoints.
+            inset = 0 if kind == 'line' else min(stroke/2, w/2, h/2)
+            if kind == 'line' and line_style == 'solid':
+                canvas.setLineCap(1)
             if kind == 'highlight':
                 canvas.setFillColor(colors.HexColor(color)); canvas.setFillAlpha(.3); canvas.rect(inset, inset, max(.1,w-2*inset), max(.1,h-2*inset), fill=1, stroke=0)
             elif kind in ('rectangle','ellipse'):
+                opacity = scalar(element.get('fillOpacity', 1))
+                if not 0 <= opacity <= 1: raise ValueError('잘못된 채움 불투명도')
+                if fill != 'none' and opacity < 1: canvas.setFillAlpha(opacity)
                 if kind == 'rectangle': canvas.rect(inset,inset,max(.1,w-2*inset),max(.1,h-2*inset),fill=int(fill!='none'),stroke=1)
                 else: canvas.ellipse(inset,inset,w-inset,h-inset,fill=int(fill!='none'),stroke=1)
             else:
@@ -130,7 +139,7 @@ def draw_element(canvas, element, width, height, font):
                 for point in points[1:]: path.lineTo(*point)
                 canvas.drawPath(path)
                 if kind == 'arrow' and len(points)>1:
-                    a,b=points[-2:]; angle=math.atan2(b[1]-a[1],b[0]-a[0]); length=min(min(w,h)/2,max(6,stroke*4))
+                    a,b=points[-2:]; angle=math.atan2(b[1]-a[1],b[0]-a[0]); length=min(math.dist(a,b)/2,min(w,h)/2,max(6,stroke*4))
                     canvas.setDash()
                     for offset in (-.5,.5): canvas.line(*b,b[0]-length*math.cos(angle+offset),b[1]-length*math.sin(angle+offset))
         elif kind == 'stamp':
@@ -235,20 +244,36 @@ def export(path, plan_path, target):
     if len(check.pages) != len(pages): raise ValueError('저장된 PDF 페이지 수가 다릅니다.')
 
 
+def append_pages(source, extra, target):
+    if extra is None:
+        raise ValueError('삽입할 PDF가 필요합니다.')
+    original, added = open_source(source), open_source(extra)
+    if len(original.pages) + len(added.pages) > 500:
+        raise ValueError('삽입 후 원본 페이지 수는 500쪽 이하여야 합니다.')
+    writer = PdfWriter(clone_from=original)
+    writer.append(added, import_outline=False)
+    with target.open('xb') as output:
+        writer.write(output)
+    open_source(target)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('operation', choices=['inspect', 'render', 'text', 'export'])
+    parser.add_argument('operation', choices=['inspect', 'render', 'text', 'export', 'append'])
     parser.add_argument('source', type=Path); parser.add_argument('output', type=Path)
     parser.add_argument('--page', type=int, default=0); parser.add_argument('--rotation', type=int, default=0)
     parser.add_argument('--plan', type=Path)
+    parser.add_argument('--append', type=Path)
+    parser.add_argument('--include-invisible', action='store_true')
     parser.add_argument('--max-size',type=int,default=1800)
     args = parser.parse_args()
     if args.operation == 'inspect': args.output.write_text(json.dumps(inspect(args.source), ensure_ascii=False), encoding='utf-8')
     elif args.operation == 'text':
         open_source(args.source)
         from pdf_text_edit import text_layer
-        args.output.write_text(json.dumps(text_layer(args.source, args.page, geometry), ensure_ascii=False), encoding='utf-8')
+        args.output.write_text(json.dumps(text_layer(args.source, args.page, geometry, args.include_invisible), ensure_ascii=False), encoding='utf-8')
     elif args.operation == 'render': render(args.source, args.page, args.rotation, args.output, args.plan, args.max_size)
+    elif args.operation == 'append': append_pages(args.source, args.append, args.output)
     else: export(args.source, args.plan, args.output)
 
 

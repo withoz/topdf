@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -13,7 +13,7 @@ public partial class PdfEditorView
         var zoom=Math.Max(.01,(EditSurface.LayoutTransform as ScaleTransform)?.ScaleX??1);
         var tolerance=4/zoom;
         if(!Graphics.Contains(item.Kind))return new Rect(0,0,item.Width,item.Height).Contains(local);
-        var inset=Math.Min(item.StrokeWidth/2,Math.Min(item.Width,item.Height)/2);
+        var inset=GraphicInset(item);
         var bounds=new Rect(inset,inset,Math.Max(.1,item.Width-2*inset),Math.Max(.1,item.Height-2*inset));
         Geometry geometry;
         if(item.Kind is "rectangle" or "highlight")geometry=new RectangleGeometry(bounds);
@@ -23,12 +23,12 @@ public partial class PdfEditorView
             var path=new StreamGeometry();using(var context=path.Open()){
                 context.BeginFigure(points[0],false,false);foreach(var p in points.Skip(1))context.LineTo(p,true,false);
                 if(item.Kind=="arrow"&&points.Length>=2){
-                    var a=points[^2];var b=points[^1];var angle=Math.Atan2(b.Y-a.Y,b.X-a.X);var length=Math.Min(Math.Min(item.Width,item.Height)/2,Math.Max(6,item.StrokeWidth*4));
-                    foreach(var offset in new[]{-.5,.5}){context.BeginFigure(b,false,false);context.LineTo(new Point(b.X-length*Math.Cos(angle+offset),b.Y-length*Math.Sin(angle+offset)),true,false);}
+                    var head=ArrowHead(points[^2],points[^1],item);
+                    context.BeginFigure(head[0],false,false);context.LineTo(head[1],true,false);context.LineTo(head[2],true,false);
                 }
             }path.Freeze();geometry=path;
         }
-        var filled=item.Kind=="highlight"||item.Kind is "rectangle" or "ellipse"&&item.Fill!="none";
+        var filled=item.Kind=="highlight"||item.Kind is "rectangle" or "ellipse"&&item.Fill!="none"&&item.FillOpacity>0;
         return filled&&geometry.FillContains(local)||geometry.StrokeContains(new Pen(Brushes.Black,item.StrokeWidth+2*tolerance),local);
     }
     PdfEditElement? AnnotationAt(Point point,bool cycle)
@@ -40,9 +40,9 @@ public partial class PdfEditorView
     }
     void SelectAnnotationAtPointer(object sender,MouseButtonEventArgs e)
     {
-        if(saving||Page==null||Tool is not ("선택" or "본문" or "메모"))return;
+        if(IsViewing||saving||Page==null||Tool is not ("선택" or "본문" or "메모"))return;
         for(var node=e.OriginalSource as DependencyObject;node!=null&&node!=EditCanvas;node=node is Visual?VisualTreeHelper.GetParent(node):LogicalTreeHelper.GetParent(node))
-            if(node is Thumb||node is TextBoxBase&&!Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))return;
+            if(node is Thumb or ButtonBase||node is TextBoxBase&&!Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))return;
         SelectHitAnnotation(e.GetPosition(EditCanvas),Keyboard.Modifiers.HasFlag(ModifierKeys.Alt),e);
     }
     void SelectHitAnnotation(Point point,bool cycle,MouseButtonEventArgs e)

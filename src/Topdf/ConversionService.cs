@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 namespace Topdf;
 
@@ -23,7 +23,7 @@ public sealed class ConversionService
         if (!File.Exists(input)) throw new FileNotFoundException("원본 파일을 찾을 수 없습니다.", input);
         if (!Supports(input)) throw new NotSupportedException("이 형식은 아직 연결된 변환 엔진이 없습니다.");
         if (Path.GetExtension(input).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) return input;
-        if (!useCompatibilityEngines) return await IndependentConversion.ConvertAsync(input, root, cancellation);
+        if (!useCompatibilityEngines && !Path.GetExtension(input).Equals(".ppt", StringComparison.OrdinalIgnoreCase)) return await IndependentConversion.ConvertAsync(input, root, cancellation);
         if (Native.Contains(Path.GetExtension(input))) return await ConvertNativeAsync(input, root, cancellation);
         var engine = FindLibreOffice() ?? throw new InvalidOperationException("LibreOffice 설치가 필요합니다.");
         var job = Path.Combine(root, Guid.NewGuid().ToString("N"));

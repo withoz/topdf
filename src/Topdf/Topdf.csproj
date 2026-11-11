@@ -1,23 +1,31 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.3.15</Version>
+    <Version>0.4.1</Version>
     <ApplicationIcon>Assets/topdf.ico</ApplicationIcon>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(TopdfSmart)' == 'false'">
+    <DefineConstants>$(DefineConstants);TOPDF_NO_SMART</DefineConstants>
+    <TopdfExcludedEngines>engines/vendor/llama/**/*;engines/vendor/tesseract/**/*</TopdfExcludedEngines>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TopdfApprovalUrl)' != ''">
+    <AssemblyMetadata Include="TopdfApprovalUrl" Value="$(TopdfApprovalUrl)" />
+    <AssemblyMetadata Include="TopdfApprovalPin" Value="$(TopdfApprovalPin)" />
+  </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets/topdf-logo.png" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <PackageReference Include="MiniPdf" Version="0.43.2" />
     <Content Include="engines/convert.py" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="engines/document_tools.py" CopyToOutputDirectory="PreserveNewest" />
+    <Content Condition="'$(TopdfSmart)' != 'false'" Include="engines/document_tools.py" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/pdf_typography.py" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/pdf_text_edit.py" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/pdf_edit.py" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/requirements.txt" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="engines/vendor/**/*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="engines/vendor/**/*" Exclude="$(TopdfExcludedEngines)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

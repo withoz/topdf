@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Web.WebView2.Core;
@@ -25,26 +25,41 @@ public partial class MainWindow
     {
         if(pdfEditor!=null){if(string.Equals(editorSource,source,StringComparison.OrdinalIgnoreCase))return;if(!pdfEditor.CanClose())return;EndPdfEditing();}
         var editor=new PdfEditorView(source,name);pdfEditor=editor;editorSource=source;editorJob=SelectedJob;
+        var job=editorJob;
+        editor.EditStateChanged+=(_,_)=>{if(job!=null)job.HasUnsavedEdits=editor.HasUnsavedEdits;};
         editor.Saved+=async(_,_)=>{
             if(!ReferenceEquals(pdfEditor,editor))return;var result=editor.ResultPath;EndPdfEditing();
             if(closed||result==null)return;await OpenFilesAsync([result]);Summary.Text="수정본을 새 탭으로 열었습니다. 원본은 보존했습니다.";
         };
-        editor.NativeZoomCommand=ChangeNativeZoomAsync;editor.NavigateViewingPdf=NavigateUnifiedPreviewAsync;editor.ReadViewingPosition=ReadViewingPositionAsync;editor.ToggleNativePagePane=ToggleNativeContentsAsync;
-        PreviewHost.Children.Remove(PdfViewer);editor.AttachNativeViewer(PdfViewer,source);
+        if(preferSharedPageEditor)editor.AttachSharedEditor();
+        else {
+            editor.NativeZoomCommand=ChangeNativeZoomAsync;editor.NavigateViewingPdf=NavigateUnifiedPreviewAsync;
+            editor.ReadViewingPosition=ReadViewingPositionAsync;editor.ToggleNativePagePane=ToggleNativeContentsAsync;
+            PreviewHost.Children.Remove(PdfViewer);editor.AttachNativeViewer(PdfViewer,source);
+        }
         LayoutRoot.Children.Remove(DocumentTabs);
         DocumentTabs.SetBinding(System.Windows.Controls.Primitives.Selector.SelectedItemProperty,new System.Windows.Data.Binding("SelectedItem") {Source=Files,Mode=System.Windows.Data.BindingMode.TwoWay});
         editor.AttachDocumentTabs(DocumentTabs);
+        WindowActionsHost.Content=null;
+        WindowActionsHost.Visibility=Visibility.Collapsed;
+        editor.AttachWindowActions(WindowActions);
         InlineEditorHost.Content=editor;InlineEditorHost.Visibility=Visibility.Visible;EmptyPreview.Visibility=Visibility.Collapsed;
         try {
             await editor.Ready;
             if(closed || !ReferenceEquals(pdfEditor,editor))return;
             if(Path.GetExtension(source).Equals(".topdf",StringComparison.OrdinalIgnoreCase)) {
-                await editor.ReturnToViewingAsync(true);
-                if(editorJob!=null && PdfViewer.Source!=null)editorJob.Pdf=PdfViewer.Source.LocalPath;
+                if(preferSharedPageEditor) {
+                    var pdf=await editor.GetViewingPdfAsync();
+                    if(ReferenceEquals(pdfEditor,editor)&&editorJob!=null)editorJob.Pdf=pdf;
+                } else {
+                    await editor.ReturnToViewingAsync(true);
+                    if(editorJob!=null&&PdfViewer.Source!=null)editorJob.Pdf=PdfViewer.Source.LocalPath;
+                }
             }
-            await editor.SyncViewingZoomAsync();
-            Summary.Text="도구 선택으로 수정 · Esc로 보기";
-        } catch(OperationCanceledException) {} catch(Exception ex){if(ReferenceEquals(pdfEditor,editor))Summary.Text="보기는 계속 사용할 수 있습니다. 편집 준비 실패: "+ex.Message;}
+            if(preferSharedPageEditor)await editor.SetSharedPageViewAsync(startEditing:true);
+            else await editor.SyncViewingZoomAsync();
+            Summary.Text="선·글자 도구로 편집 · Esc로 선택";
+        } catch(OperationCanceledException) {} catch(Exception ex){if(ReferenceEquals(pdfEditor,editor))Summary.Text="PDF 편집 준비 실패: "+ex.Message;}
     }
     async Task NavigateUnifiedPreviewAsync(string pdf,int page,double zoom)
     {
@@ -60,7 +75,13 @@ public partial class MainWindow
     }
     void EndPdfEditing()
     {
-        if(pdfEditor!=null){pdfEditor.DetachDocumentTabs();pdfEditor.DetachNativeViewer();pdfEditor.DisposeEditor();}
+        if(pdfEditor!=null){
+            SmartToggle.IsChecked=false;
+            pdfEditor.DetachWindowActions();
+            WindowActionsHost.Content=WindowActions;
+            WindowActionsHost.Visibility=Visibility.Visible;
+            pdfEditor.DetachDocumentTabs();pdfEditor.DetachNativeViewer();pdfEditor.DisposeEditor();
+        }
         pdfEditor=null;editorJob=null;editorSource=null;
         InlineEditorHost.Content=null;InlineEditorHost.Visibility=Visibility.Collapsed;
         if(!LayoutRoot.Children.Contains(DocumentTabs))LayoutRoot.Children.Add(DocumentTabs);

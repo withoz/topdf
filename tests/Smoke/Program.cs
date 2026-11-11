@@ -1,3 +1,4 @@
+using System.IO;
 using Topdf;
 var root = Path.GetFullPath(args.Length > 0 ? args[0] : "artifacts/smoke");
 Directory.CreateDirectory(root);

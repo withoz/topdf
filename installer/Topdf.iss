@@ -8,13 +8,14 @@
  #error Bootstrapper must point to the signed Microsoft WebView2 bootstrapper
 #endif
 #ifndef AppVersion
- #define AppVersion "0.3.15"
+ #define AppVersion "0.4.1"
 #endif
 [Setup]
 AppId={{7BB8D838-71D7-4CA3-A7A4-DB997AFCACB9}
 AppName=TOPDF
 AppVersion={#AppVersion}
 AppPublisher=withoz
+AppCopyright=Copyright (c) 2026 withoz
 AppPublisherURL=https://github.com/withoz/topdf
 DefaultDirName={localappdata}\Programs\TOPDF
 DefaultGroupName=TOPDF
@@ -28,7 +29,15 @@ OutputBaseFilename=TOPDF-Setup-{#AppVersion}-win-x64
 SignTool=topdf
 SignedUninstaller=yes
 #else
+#ifdef NasApproval
+OutputBaseFilename=TOPDF-Setup-{#AppVersion}-NAS-Approval-win-x64
+#else
+#ifdef NoSmart
+OutputBaseFilename=TOPDF-Setup-{#AppVersion}-NoSmart-win-x64
+#else
 OutputBaseFilename=TOPDF-Setup-{#AppVersion}-win-x64-preview
+#endif
+#endif
 #endif
 SetupIconFile=..\src\Topdf\Assets\topdf.ico
 UninstallDisplayIcon={app}\Topdf.exe
@@ -68,6 +77,10 @@ Root: HKCU; Subkey: "Software\Classes\.xls\OpenWithProgids"; ValueType: string; 
 Root: HKCU; Subkey: "Software\Classes\Applications\Topdf.exe\SupportedTypes"; ValueType: string; ValueName: ".xls"; ValueData: ""; Tasks: associations
 Root: HKCU; Subkey: "Software\Classes\.xlsx\OpenWithProgids"; ValueType: string; ValueName: "TOPDF.Document"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associations
 Root: HKCU; Subkey: "Software\Classes\Applications\Topdf.exe\SupportedTypes"; ValueType: string; ValueName: ".xlsx"; ValueData: ""; Tasks: associations
+Root: HKCU; Subkey: "Software\Classes\.ppt\OpenWithProgids"; ValueType: string; ValueName: "TOPDF.Document"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associations
+Root: HKCU; Subkey: "Software\Classes\Applications\Topdf.exe\SupportedTypes"; ValueType: string; ValueName: ".ppt"; ValueData: ""; Tasks: associations
+Root: HKCU; Subkey: "Software\Classes\.pptx\OpenWithProgids"; ValueType: string; ValueName: "TOPDF.Document"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associations
+Root: HKCU; Subkey: "Software\Classes\Applications\Topdf.exe\SupportedTypes"; ValueType: string; ValueName: ".pptx"; ValueData: ""; Tasks: associations
 Root: HKCU; Subkey: "Software\Classes\.dwg\OpenWithProgids"; ValueType: string; ValueName: "TOPDF.Document"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associations
 Root: HKCU; Subkey: "Software\Classes\Applications\Topdf.exe\SupportedTypes"; ValueType: string; ValueName: ".dwg"; ValueData: ""; Tasks: associations
 Root: HKCU; Subkey: "Software\Classes\.dxf\OpenWithProgids"; ValueType: string; ValueName: "TOPDF.Document"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associations

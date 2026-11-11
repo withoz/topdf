@@ -1,8 +1,10 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 namespace Topdf;
@@ -13,6 +15,7 @@ public partial class PdfEditorView
     public Func<Task>? ToggleNativePagePane {get;set;}
     readonly SemaphoreSlim previewSlots=new(2);
     readonly Dictionary<string,string> pagePreviews=[];
+    readonly Dictionary<Image,CancellationTokenSource> previewRequests=[];
     sealed class SpreadRow : List<PageTile>,INotifyPropertyChanged
     {
         public int Columns {get;init;}
@@ -36,18 +39,47 @@ public partial class PdfEditorView
     {
         if(sender is Button {Tag:string text}&&int.TryParse(text,out var count))await SetViewColumnsAsync(count);
     }
+    async void UseSharedPageView(object sender,RoutedEventArgs e)=>await SetSharedPageViewAsync();
     public async Task SetViewColumnsAsync(int count)
     {
-        if(count<1||count>3||IsBusy)return;zoomFit="width";ViewColumns=count;PageLayoutOptions.IsChecked=false;await ReturnToViewingAsync(true);
+        if(count<1||count>3||IsBusy)return;
+        if(editorOnly&&count==1){await SetSharedPageViewAsync();return;}
+        useSharedPageView=editorOnly;zoomFit="width";ViewColumns=count;
+        PageLayoutOptions.IsChecked=false;await ReturnToViewingAsync(true);
     }
     async void TogglePagePane(object sender,RoutedEventArgs e)
     {
         pagePaneWanted=!pagePaneWanted;
-        if(IsViewing&&ViewColumns==1&&ToggleNativePagePane!=null){await ToggleNativePagePane();return;}
+        if(IsNativeViewing&&ToggleNativePagePane!=null){await ToggleNativePagePane();return;}
         RefreshPagePane();
     }
     void HidePagePane(object sender,RoutedEventArgs e){pagePaneWanted=false;RefreshPagePane();}
-    void RefreshPagePane()=>PageNavigationPanel.Visibility=pagePaneWanted&&(!IsViewing||ViewColumns>1)?Visibility.Visible:Visibility.Collapsed;
+    void RefreshPagePane()
+    {
+        var visibility=pagePaneWanted&&!IsNativeViewing?Visibility.Visible:Visibility.Collapsed;
+        PageNavigationPanel.Visibility=PagePaneResize.Visibility=visibility;
+    }
+
+    void ResizePagePane(object sender,DragDeltaEventArgs e)=>SetPagePaneWidth(PageNavigationPanel.Width+e.HorizontalChange);
+    void ResetPagePaneWidth(object sender,MouseButtonEventArgs e)
+    {
+        SetPagePaneWidth(195);
+        e.Handled=true;
+    }
+    void SetPagePaneWidth(double width)
+    {
+        width=Math.Clamp(width,120,Math.Max(120,Math.Min(420,ActualWidth-300)));
+        if(Math.Abs(PageNavigationPanel.Width-width)<.1)return;
+        var anchor=new Point(EditScroll.ViewportWidth/2,EditScroll.ViewportHeight/2);
+        var pagePoint=EditScroll.TranslatePoint(anchor,EditSurface);
+        if(EditingArea.IsVisible)zoomFit=null;
+        PageNavigationPanel.Width=width;
+        UpdateLayout();
+        if(!EditingArea.IsVisible)return;
+        var after=EditSurface.TranslatePoint(pagePoint,EditScroll);
+        EditScroll.ScrollToHorizontalOffset(EditScroll.HorizontalOffset+after.X-EditScroll.ViewportWidth/2);
+        EditScroll.ScrollToVerticalOffset(EditScroll.VerticalOffset+after.Y-EditScroll.ViewportHeight/2);
+    }
     void BuildSpreads(string pdf)
     {
         spreadRows.Clear();
@@ -87,21 +119,43 @@ public partial class PdfEditorView
     async void LoadPageThumbnail(object sender,RoutedEventArgs e)
     {
         if(sender is not Image {DataContext:PdfEditPage page} image||info==null)return;
-        var source=plan.Pages.IndexOf(page);var copy=PdfEditService.Clone(plan);
-        var data=info.Pages[page.SourceIndex];image.Height=150*(page.Rotation is 90 or 270?data.Width/data.Height:data.Height/data.Width);
+        var source=plan.Pages.IndexOf(page);
+        var copy=page.Elements.Any(element=>element.Kind=="replace")?new PdfEditPlan {
+            SourceSha256=plan.SourceSha256,Pages=[new(){SourceIndex=page.SourceIndex,Elements=page.Elements.Where(element=>element.Kind=="replace").ToList()}]
+        }:null;
+
         if(viewingPath!=null&&viewingPlan==JsonSerializer.Serialize(plan,ProjectJson))await FillPreviewAsync(image,page,viewingPath,source,0,null,420);
         else await FillPreviewAsync(image,page,snapshot,page.SourceIndex,page.Rotation,copy,420);
     }
+    void CancelPreviewImage(object sender,RoutedEventArgs e)
+    {
+        if(sender is Image image&&previewRequests.Remove(image,out var old))old.Cancel();
+    }
     async Task FillPreviewAsync(Image image,object context,string pdf,int page,int rotation,PdfEditPlan? copy,int pixels)
     {
+        CancelPreviewImage(image,new RoutedEventArgs());
+        using var request=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        previewRequests[image]=request;
+        var token=request.Token;
         try {
-            var key=pdf+":"+page+":"+rotation+":"+pixels+(copy==null?"":JsonSerializer.Serialize(copy.Pages.First(p=>p.SourceIndex==page).Elements.Where(x=>x.Kind=="replace"),ProjectJson));
-            await previewSlots.WaitAsync(lifetime.Token);
+            var key=pdf+":"+page+":"+rotation+":"+pixels+(copy==null?"":JsonSerializer.Serialize(copy,ProjectJson));
+            while(EditingArea.IsVisible&&EditSurface.Visibility==Visibility.Hidden)await Task.Delay(30,token);
+            await previewSlots.WaitAsync(token);
             string path;
-            try{if(!ReferenceEquals(image.DataContext,context)||!image.IsVisible)return;if(!pagePreviews.TryGetValue(key,out path!)){path=await PdfEditService.RenderAsync(pdf,work,page,rotation,lifetime.Token,copy,pixels);pagePreviews[key]=path;}}
-            finally{previewSlots.Release();}
-            if(!ReferenceEquals(image.DataContext,context)||lifetime.IsCancellationRequested)return;
-            var bitmap=new BitmapImage();bitmap.BeginInit();bitmap.CacheOption=BitmapCacheOption.OnLoad;bitmap.UriSource=new Uri(Path.GetFullPath(path));bitmap.DecodePixelWidth=pixels;bitmap.EndInit();bitmap.Freeze();image.Source=bitmap;
-        }catch(OperationCanceledException){}catch(Exception){/* A failed thumbnail must not replace the document or discard edits. */}
+            try {
+                if(!ReferenceEquals(image.DataContext,context)||!image.IsVisible)return;
+                if(!pagePreviews.TryGetValue(key,out path!)) {
+                    path=await PdfEditService.RenderAsync(pdf,work,page,rotation,token,copy,pixels);
+                    token.ThrowIfCancellationRequested();
+                    if(pagePreviews.Count>=128)pagePreviews.Remove(pagePreviews.Keys.First());
+                    pagePreviews[key]=path;
+                }
+            } finally {previewSlots.Release();}
+            if(ReferenceEquals(image.DataContext,context)&&!token.IsCancellationRequested)image.Source=LoadImage(path);
+        } catch(OperationCanceledException) {}
+        catch(Exception) {/* Keep the document available when a thumbnail fails. */}
+        finally {
+            if(previewRequests.TryGetValue(image,out var active)&&ReferenceEquals(active,request))previewRequests.Remove(image);
+        }
     }
 }

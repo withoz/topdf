@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -7,7 +7,7 @@ namespace Topdf;
 public sealed record AssociationEntry(string Key, string Name, string Value);
 public static class FileAssociationRegistration
 {
-    static readonly string[] Extensions = [".hwp", ".hwpx", ".docx", ".xls", ".xlsx", ".dwg", ".dxf", ".pdf"];
+    static readonly string[] Extensions = [".hwp", ".hwpx", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".dwg", ".dxf", ".pdf"];
     public static IReadOnlyList<AssociationEntry> BuildEntries(string executable)
     {
         executable = Path.GetFullPath(executable);

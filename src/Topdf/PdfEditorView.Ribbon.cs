@@ -29,22 +29,26 @@ public partial class PdfEditorView
         if(EditTool==null || sender is not RadioButton {Tag:string tag} || !int.TryParse(tag,out var index) || index<0)return;
         ApplyInlineText();
         if(index is 2 or 3 && TextFont!=null) {
-            foreach(var option in TextFont.Items.Cast<ComboBoxItem>().Where(x=>x.Content.ToString() is not ("Malgun Gothic" or "Gulim" or "Batang")).ToArray())TextFont.Items.Remove(option);
-            if(TextFont.SelectedIndex<0)TextFont.SelectedIndex=0;
+            syncingTextFormat=true;
+            try {
+                foreach(var option in TextFont.Items.Cast<ComboBoxItem>().Where(x=>x.Content.ToString() is not ("Malgun Gothic" or "Gulim" or "Batang")).ToArray())TextFont.Items.Remove(option);
+                if(TextFont.SelectedIndex<0)TextFont.SelectedIndex=0;
+            } finally {syncingTextFormat=false;}
         }
         EditTool.SelectedIndex=index;
     }
     void RibbonSelectionChanged(object sender,SelectionChangedEventArgs e)
     {
         if(EditorRibbon==null || EditTool==null)return;
-        if(Tool!="선")StopContinuousLine();
+        if(Tool!="도장"||IsViewing)HideStampPreview();
+        if(continuousLineKind!=null && Tool!=(continuousLineKind=="arrow"?"화살표":"선"))StopContinuousLine();
         foreach(var tool in RibbonButtons)tool.IsChecked=int.TryParse(tool.Tag?.ToString(),out var index)&&index==(IsViewing ? -1 : EditTool.SelectedIndex);
         if(TextProperties!=null)TextProperties.Visibility=!IsViewing && EditTool.SelectedIndex is 0 or 2 or 3 ? Visibility.Visible : Visibility.Collapsed;
         var active=new SolidColorBrush(Color.FromRgb(221,239,250));
         if(TextToolsButton!=null)TextToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 0 or 2 ? active : Brushes.White;
         if(DrawingToolsButton!=null)DrawingToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 5 or 6 or 7 or 8 or 12 ? active : Brushes.White;
         if(MarkupToolsButton!=null)MarkupToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 3 or 9 or 10 or 11 ? active : Brushes.White;
-        if(EditCanvas!=null)RefreshSelectionDecorations();
+        if(EditCanvas!=null){RefreshObjectTools();RefreshObjectProperties();RefreshSelectionDecorations();if(info!=null)RefreshTextAvailability();}
     }
     bool syncingPalette;
     void RefreshPenColor()

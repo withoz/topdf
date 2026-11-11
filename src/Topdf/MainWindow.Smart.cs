@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,7 +18,7 @@ public partial class MainWindow
 
     public Task InspectAsync(FileJob job)
     {
-        if (job.Pdf == null || job.Analysis != null || job.AnalysisError != null) return Task.CompletedTask;
+        if (!BuildFeatures.SmartEnabled || job.Pdf == null || job.Analysis != null || job.AnalysisError != null) return Task.CompletedTask;
         var key = (job, job.Pdf);
         if (analyzing.TryGetValue(key, out var running)) return running;
         var task = InspectCoreAsync(job);
@@ -41,9 +41,9 @@ public partial class MainWindow
     }
     void RefreshInspection()
     {
-        if (QualityList == null) return;
+        if (!BuildFeatures.SmartEnabled || QualityList == null) return;
         QualityList.ItemsSource = SelectedJob?.Analysis?.Issues.Select(i => new Evidence(SelectedJob, i.Page, i.Message)).ToArray();
-        QualityNotice.Text = SelectedJob?.Analysis is { } a ? $"{a.Pages.Length}쪽 · {a.Issues.Length}건 확인\n{a.Notice}" : SelectedJob?.AnalysisError ?? "문서를 선택하면 자동으로 점검합니다.";
+        QualityNotice.Text = SelectedJob?.Analysis is { } a ? $"{a.Pages.Length}쪽 · {a.Issues.Length}건 확인\n{a.Notice}" : SelectedJob?.AnalysisError ?? "문서 점검을 누르면 확인할 항목을 표시합니다.";
         CompareTarget.ItemsSource = jobs.Where(j => j.Pdf != null && !ReferenceEquals(j, SelectedJob)).ToArray();
     }
     async void RefreshQuality(object sender, RoutedEventArgs e)
@@ -70,7 +70,11 @@ public partial class MainWindow
         Files.SelectedItem = hit.Job;
         SmartToggle.IsChecked = false; SetMenuOpen(false);
         await ShowPreviewAsync(hit.Job);
-        if (hit.Page > 0 && hit.Job.Pdf != null && allowedPreviewUri != null) PdfViewer.CoreWebView2?.Navigate(allowedPreviewUri + "#page=" + hit.Page);
+        if(hit.Page>0 && ReferenceEquals(editorJob,hit.Job) && pdfEditor is { } editor) {
+            try {await editor.Ready;await editor.NavigateToPageAsync(hit.Page);}
+            catch(OperationCanceledException) {}
+            catch(Exception ex) {Summary.Text=ex.Message;}
+        }
     }
     async void CompareDocuments(object sender, RoutedEventArgs e)
     {
@@ -157,7 +161,7 @@ public partial class MainWindow
         var job = jobs.First(j => j.Source.Equals(path, StringComparison.OrdinalIgnoreCase));
         job.Analysis = null; job.AnalysisError = null;
         if (job.Status == "완료" && !path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) { job.Pdf = null; job.Status = "대기"; }
-        await ConvertPendingAsync();
+        await QueueConversionsAsync([job]);
         if (sourceHash != await Fingerprint(path)) { WatchNotice.Text = "입력 파일이 변경되어 다시 처리할 때까지 저장을 보류합니다."; return false; }
         if (job.Pdf == null) { WatchNotice.Text = $"{job.Name}: {job.Detail}"; return false; }
         var result = await Task.Run(() => PdfExportService.Export([new(job.Source, job.Pdf)], destination));

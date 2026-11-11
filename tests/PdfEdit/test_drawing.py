@@ -18,7 +18,7 @@ kinds=['line','arrow','rectangle','ellipse','highlight','underline','strikeout',
 for n in range(4):
  elements=[]
  for i,kind in enumerate(kinds):
-  elements.append(dict(kind=kind,x=80+(i%2)*380,y=100+(i//2)*150,width=260,height=70,rotation=0,color='#1755B5',strokeWidth=4,dashed=i%2==0,fill='#E5EEFF' if kind=='rectangle' else 'none',points=[[0,.8],[.4,.2],[1,.8]] if kind=='freehand' else [[0,.5],[1,.5]]))
+  elements.append(dict(kind=kind,x=80+(i%2)*380,y=100+(i//2)*150,width=260,height=70,rotation=0,color='#1755B5',strokeWidth=4,dashed=i%2==0,fill='#F05522' if kind=='rectangle' else 'none',fillOpacity=.55 if kind=='rectangle' else 1,points=[[0,.8],[.4,.2],[1,.8]] if kind=='freehand' else [[0,.5],[1,.5]]))
  for i,font in enumerate(['Malgun Gothic','Gulim','Batang']):
   elements.append(dict(kind='text',text='한글 편집 123,000원',x=80+i*300,y=750,width=280,height=70,fontSize=20,color='#111111',rotation=0,fontFamily=font,alignment=['left','center','right'][i]))
  pages.append(dict(sourceIndex=n,rotation=(n*90)%360,elements=elements))
@@ -33,6 +33,8 @@ for n,page in enumerate(doc):
  # Convert PDF extraction coordinates to displayed page coordinates before comparison.
  blue=[d for d in page.get_drawings() if d.get('color') and abs(d['color'][2]-.71)<.06]
  assert len(blue)>=6
+ filled=next(d for d in page.get_drawings() if d.get('fill') and d['fill'][0]>.9 and d['fill'][2]<.2)
+ assert abs(filled['fill_opacity']-.55)<.01 and abs(filled['stroke_opacity']-1)<.01 and filled['color'][2]>.65,filled
  # Raster coordinates use the displayed crop/rotation/UserUnit geometry.
  from PIL import Image
  image=Image.frombytes('RGB',(pix.width,pix.height),pix.samples)

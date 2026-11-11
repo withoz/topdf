@@ -27,12 +27,12 @@ internal static class ContextTextUiTest
                 view.AddText(60,80,"안녕하세요");var item=((PdfEditPlan)Field(view,"plan")!).Pages[0].Elements.Last();var id=item.Id;var initialWidth=item.Width;var initialHeight=item.Height;
                 Check(item.AutoWidth&&initialWidth<160,"Short text starts compact and auto-sized");
                 Call(view,"BeginAddedText");await Task.Delay(150);var box=canvas.Children.OfType<TextBox>().Single();
-                box.Text="안녕하세요 글자 수가 늘어나는 입력 테스트";Check(box.Width>initialWidth&&item.Width==box.Width,"Typing grows box immediately");
+                box.Text="안녕하세요 글자 수가 늘어나는 입력 테스트";Check(box.Width>initialWidth&&box.Width>=item.Width+item.FontSize-.01&&box.VerticalScrollBarVisibility==ScrollBarVisibility.Hidden,"Typing grows box immediately");
                 box.Text="가";Check(box.Width<initialWidth&&item.X==60&&item.Y==80,"Deleting shrinks width without moving origin");
                 box.Text="첫째 줄\n둘째 줄\n셋째 줄";Check(box.Height>initialHeight*1.8,"Newlines grow height");
                 ((Action)Field(view,"addedTextCommit")!)();view.Undo();Check(((PdfEditPlan)Field(view,"plan")!).Pages[0].Elements.Single(x=>x.Id==id).Text=="안녕하세요"&&Math.Abs(((PdfEditPlan)Field(view,"plan")!).Pages[0].Elements.Single(x=>x.Id==id).Width-initialWidth)<.01,"Text and size Undo together");view.Redo();
                 item=((PdfEditPlan)Field(view,"plan")!).Pages[0].Elements.Single(x=>x.Id==id);Set(view,"selectedId",id);((HashSet<string>)Field(view,"selectedIds")!).Clear();Call(view,"DrawElements");
-                var thumb=canvas.Children.OfType<Thumb>().Single();var font=item.FontSize;
+                var thumb=canvas.Children.OfType<Thumb>().Single(x=>!Equals(x.Tag,"object-rotation"));var font=item.FontSize;
                 thumb.RaiseEvent(new DragStartedEventArgs(0,0){RoutedEvent=Thumb.DragStartedEvent});thumb.RaiseEvent(new DragDeltaEventArgs(70,0){RoutedEvent=Thumb.DragDeltaEvent});thumb.RaiseEvent(new DragCompletedEventArgs(70,0,false){RoutedEvent=Thumb.DragCompletedEvent});
                 Check(!item.AutoWidth&&item.FontSize==font,"Manual text width does not enlarge font");var manualWidth=item.Width;
                 Call(view,"BeginAddedText");await Task.Delay(100);box=canvas.Children.OfType<TextBox>().Single();box.Text="가";Check(Math.Abs(box.Width-manualWidth)<.01,"Manual width remains fixed while editing");((Action)Field(view,"addedTextCommit")!)();

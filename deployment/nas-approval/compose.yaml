@@ -1,0 +1,18 @@
+services:
+  topdf-approval:
+    build: .
+    user: "${TOPDF_UID}:${TOPDF_GID}"
+    ports:
+      - "${TOPDF_NAS_IP}:8743:8743"
+    environment:
+      TOPDF_DATA: /data
+      TOPDF_TLS: /tls
+    volumes:
+      - ./data:/data
+      - ./tls:/tls:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    mem_limit: 160m
+    pids_limit: 80
