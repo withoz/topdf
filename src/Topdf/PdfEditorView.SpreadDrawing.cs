@@ -85,7 +85,7 @@ public partial class PdfEditorView
         foreach(var element in page.Elements.Where(x=>!bakedSpreadGraphics.Contains(x.Id))){
             if(Graphics.Contains(element.Kind))AddSpreadGraphic(overlay,element);
             else if(element.Kind=="stamp"){
-                var image=new Image {Source=LoadImage(element.ImagePath!),Stretch=Stretch.Fill};
+                var image=new Image {Source=LoadImage(element.ImagePath!),Stretch=Stretch.Fill,Opacity=element.ImageOpacity};
                 PlaceSpreadVisual(overlay,image,element);
             }else if(element.Kind is "text" or "note" or "replace"){
                 if(element.Kind=="replace"&&string.IsNullOrWhiteSpace(element.Text))continue;

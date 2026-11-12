@@ -7,21 +7,20 @@ namespace Topdf;
 
 internal sealed class StampImportWindow : Window
 {
-    readonly BitmapSource original;
     readonly BitmapSource thumbnail;
     readonly Image preview = new() { Stretch = Stretch.Uniform };
     readonly CheckBox remove = new() { Content = "배경 제거", Margin = new Thickness(0, 0, 0, 8) };
+    readonly CheckBox includeInterior = new() { Content = "그림 안쪽의 같은 배경색도 제거", IsChecked = true, Margin = new Thickness(16, 0, 0, 8) };
     readonly Slider strength = new() { Minimum = 0, Maximum = 120, Value = 30, TickFrequency = 1, IsSnapToTickEnabled = true };
     readonly TextBlock strengthLabel = new();
     readonly Border sample = new() { Width = 18, Height = 18, BorderBrush = Brushes.SlateGray, BorderThickness = new Thickness(1) };
     Color background;
 
-    internal StampImportWindow(BitmapSource image, Window? owner)
+    internal StampImportWindow(BitmapSource image, Window? owner, bool editExisting = false)
     {
-        original = image;
         thumbnail = new FormatConvertedBitmap(ScaledPreview(image), PixelFormats.Bgra32, null, 0);
         background = DetectBackground(thumbnail, out var hasTransparency);
-        Title = "도장 가져오기";
+        Title = editExisting ? "도장 배경 제거" : "도장 가져오기";
         Width = 460;
         SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize;
@@ -35,6 +34,7 @@ internal sealed class StampImportWindow : Window
             BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 0, 12) };
         layout.Children.Add(backdrop);
         layout.Children.Add(remove);
+        layout.Children.Add(includeInterior);
         var colorRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
         colorRow.Children.Add(sample);
         colorRow.Children.Add(new TextBlock { Text = "미리보기에서 제거할 배경색을 클릭하세요.", Margin = new Thickness(8, 0, 0, 0) });
@@ -42,13 +42,15 @@ internal sealed class StampImportWindow : Window
         layout.Children.Add(strengthLabel);
         layout.Children.Add(strength);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
-        var apply = new Button { Content = "가져오기", IsDefault = true, MinWidth = 90, Padding = new Thickness(8, 4, 8, 4) };
+        var apply = new Button { Content = editExisting ? "적용" : "가져오기", IsDefault = true, MinWidth = 90, Padding = new Thickness(8, 4, 8, 4) };
         apply.Click += (_, _) => DialogResult = true;
         buttons.Children.Add(apply);
         buttons.Children.Add(new Button { Content = "취소", IsCancel = true, MinWidth = 64, Margin = new Thickness(8, 0, 0, 0) });
         layout.Children.Add(buttons);
 
-        remove.IsChecked = !hasTransparency;
+        remove.IsChecked = editExisting || !hasTransparency;
+        includeInterior.Checked += (_, _) => RefreshPreview();
+        includeInterior.Unchecked += (_, _) => RefreshPreview();
         remove.Checked += (_, _) => RefreshPreview();
         remove.Unchecked += (_, _) => RefreshPreview();
         strength.ValueChanged += (_, _) => RefreshPreview();
@@ -69,15 +71,16 @@ internal sealed class StampImportWindow : Window
     }
 
     internal bool RemoveBackground => remove.IsChecked == true;
+    internal bool IncludeInterior => includeInterior.IsChecked == true;
     internal Color BackgroundColor => background;
     internal int Tolerance => (int)strength.Value;
 
     void RefreshPreview()
     {
-        strength.IsEnabled = RemoveBackground;
+        includeInterior.IsEnabled = strength.IsEnabled = RemoveBackground;
         strengthLabel.Text = $"제거 강도 {Tolerance}";
         sample.Background = new SolidColorBrush(background);
-        preview.Source = RemoveBackground ? RemoveEdgeBackground(thumbnail, background, Tolerance) : thumbnail;
+        preview.Source = RemoveBackground ? RemoveBackgroundColor(thumbnail, background, Tolerance, IncludeInterior) : thumbnail;
     }
 
     static BitmapSource ScaledPreview(BitmapSource image)
@@ -118,40 +121,56 @@ internal sealed class StampImportWindow : Window
             .FirstOrDefault(Colors.White);
     }
 
-    internal static BitmapSource RemoveEdgeBackground(BitmapSource source, Color background, int tolerance)
+    internal static BitmapSource RemoveBackgroundColor(BitmapSource source, Color background, int tolerance, bool includeInterior)
     {
         var image = source.Format == PixelFormats.Bgra32 ? source : new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
         var width = image.PixelWidth;
         var height = image.PixelHeight;
         var pixels = new byte[checked(width * height * 4)];
         image.CopyPixels(pixels, width * 4, 0);
-        var frontier = new Queue<int>();
+        bool Matches(int offset) => pixels[offset + 3] != 0 &&
+            Math.Abs(pixels[offset] - background.B) <= tolerance &&
+            Math.Abs(pixels[offset + 1] - background.G) <= tolerance &&
+            Math.Abs(pixels[offset + 2] - background.R) <= tolerance;
 
-        void Visit(int x, int y)
+        if (includeInterior)
         {
-            var index = y * width + x;
-            var offset = index * 4;
-            if (pixels[offset + 3] == 0 ||
-                Math.Abs(pixels[offset] - background.B) > tolerance ||
-                Math.Abs(pixels[offset + 1] - background.G) > tolerance ||
-                Math.Abs(pixels[offset + 2] - background.R) > tolerance) return;
-            pixels[offset + 3] = 0;
-            frontier.Enqueue(index);
+            for (var offset = 0; offset < pixels.Length; offset += 4)
+                if (Matches(offset)) pixels[offset + 3] = 0;
+        }
+        else
+        {
+            ClearConnectedBackground();
         }
 
-        for (var x = 0; x < width; x++) { Visit(x, 0); Visit(x, height - 1); }
-        for (var y = 0; y < height; y++) { Visit(0, y); Visit(width - 1, y); }
-        while (frontier.TryDequeue(out var index))
-        {
-            var x = index % width;
-            var y = index / width;
-            if (x > 0) Visit(x - 1, y);
-            if (x + 1 < width) Visit(x + 1, y);
-            if (y > 0) Visit(x, y - 1);
-            if (y + 1 < height) Visit(x, y + 1);
-        }
         var result = BitmapSource.Create(width, height, image.DpiX, image.DpiY, PixelFormats.Bgra32, null, pixels, width * 4);
         result.Freeze();
         return result;
+
+        void ClearConnectedBackground()
+        {
+            var frontier = new Queue<int>();
+
+            void Visit(int x, int y)
+            {
+                var index = y * width + x;
+                var offset = index * 4;
+                if (!Matches(offset)) return;
+                pixels[offset + 3] = 0;
+                frontier.Enqueue(index);
+            }
+
+            for (var x = 0; x < width; x++) { Visit(x, 0); Visit(x, height - 1); }
+            for (var y = 0; y < height; y++) { Visit(0, y); Visit(width - 1, y); }
+            while (frontier.TryDequeue(out var index))
+            {
+                var x = index % width;
+                var y = index / width;
+                if (x > 0) Visit(x - 1, y);
+                if (x + 1 < width) Visit(x + 1, y);
+                if (y > 0) Visit(x, y - 1);
+                if (y + 1 < height) Visit(x, y + 1);
+            }
+        }
     }
 }

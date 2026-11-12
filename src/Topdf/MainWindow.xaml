@@ -24,6 +24,11 @@
       <MenuItem x:Name="MenuSaveProject" Header="편집 파일 저장…" InputGestureText="Ctrl+S" Command="ApplicationCommands.Save"/>
       <MenuItem x:Name="MenuExportOther" Header="다른 형식으로 내보내기">
        <MenuItem Header="Word 문서 (DOCX)…" Tag="docx" Click="ExportOtherFormat"/>
+       <MenuItem Header="한글 문서 (HWPX)…" Tag="hwpx" Click="ExportOtherFormat"/>
+       <MenuItem Header="엑셀 통합 문서 (XLSX)…" Tag="xlsx" Click="ExportOtherFormat"/>
+       <MenuItem Header="파워포인트 (PPTX)…" Tag="pptx" Click="ExportOtherFormat"/>
+       <MenuItem Header="CAD 도면 (DXF)…" Tag="dxf" Click="ExportOtherFormat"/>
+       <Separator/>
        <MenuItem Header="PNG 이미지…" Tag="png" Click="ExportOtherFormat"/>
        <MenuItem Header="JPEG 이미지…" Tag="jpg" Click="ExportOtherFormat"/>
       </MenuItem>

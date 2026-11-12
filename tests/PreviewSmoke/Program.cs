@@ -19,6 +19,7 @@ internal static class Program
         if(args.Length==2 && args[0]=="--spread-scroll-ui") return ZoomUiTest.RunSpreadScroll(args[1]);
         if(args.Length==2 && args[0]=="--font-views-ui") return FontViewsUiTest.Run(args[1]);
         if(args.Length==2 && args[0]=="--unified-ui") return UnifiedUiTest.Run(args[1]);
+        if(args.Length==2 && args[0]=="--stamp-transparency") return StampTransparencyTest.Run(Path.GetFullPath(args[1]));
         if(args.Length==2 && args[0]=="--drawing-ui") return DrawingUiTest.Run(args[1]);
         if(args.Length==2 && args[0]=="--inline-edit-ui") return InlinePdfEditUiTest.Run(args[1]);
         if(args.Length==2 && args[0]=="--pdf-edit-ui") return PdfEditUiTest.Run(args[1]);

@@ -219,8 +219,8 @@ internal static class DrawingUiTest
                 stampPixels[(1*9+1)*4+3]=0;
                 var opaqueStamp=BitmapSource.Create(9,9,96,96,PixelFormats.Bgra32,null,stampPixels,36);
                 var import=typeof(PdfEditorView).Assembly.GetType("Topdf.StampImportWindow")!;
-                var cutout=(BitmapSource)import.GetMethod("RemoveEdgeBackground",BindingFlags.Static|BindingFlags.NonPublic)!
-                    .Invoke(null,[opaqueStamp,Colors.White,30])!;
+                var cutout=(BitmapSource)import.GetMethod("RemoveBackgroundColor",BindingFlags.Static|BindingFlags.NonPublic)!
+                    .Invoke(null,[opaqueStamp,Colors.White,30,false])!;
                 var cutPixels=new byte[stampPixels.Length];
                 cutout.CopyPixels(cutPixels,36,0);
                 Check(cutPixels[3]==0&&cutPixels[(1*9+1)*4+3]==0&&cutPixels[(2*9+2)*4+3]==255&&cutPixels[(4*9+4)*4+3]==255,
@@ -279,8 +279,48 @@ internal static class DrawingUiTest
                 Check(properties.TranslatePoint(new Point(),window).X>=editScroll.TranslatePoint(new Point(),window).X+editScroll.ActualWidth-.5,
                     "Properties are docked beside the document");
                 Control? Property(string label)=>fields.Children.OfType<StackPanel>()
-                    .SelectMany(row=>row.Children.OfType<Control>())
+                    .SelectMany(row=>row.Children.Cast<FrameworkElement>().SelectMany(child=>child is DockPanel dock?dock.Children.OfType<Control>():new[]{child}.OfType<Control>()))
                     .SingleOrDefault(control=>System.Windows.Automation.AutomationProperties.GetName(control)==label);
+                var stampOpacity=(TextBox)Property("그림 투명도 (%)")!;
+                Check(stampOpacity.Text=="0","Stamp transparency defaults to 0%");
+                stampOpacity.Text="50";
+                Check(canvas.Children.OfType<Border>().Single(x=>x.Tag is PdfEditElement item&&item.Id==stamp.Id).Child is Image {Opacity:.5},"Numeric input previews transparency before Enter");
+                stampOpacity.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                    PresentationSource.FromVisual(stampOpacity),Environment.TickCount,System.Windows.Input.Key.Enter){
+                    RoutedEvent=System.Windows.Input.Keyboard.PreviewKeyDownEvent
+                });
+                Check(Stamp().ImageOpacity==.5,"Docked transparency applies immediately");
+                var stampVisual=canvas.Children.OfType<Border>().Single(x=>x.Tag is PdfEditElement item&&item.Id==stamp.Id);
+                Check(stampVisual.Child is Image {Opacity:.5},"Stamp preview uses object transparency");
+                view.Undo();Check(Stamp().ImageOpacity==1,"Docked transparency is undoable");
+                var opacitySlider=(Slider)Property("그림 투명도 (%) 슬라이더")!;
+                opacitySlider.RaiseEvent(new DragStartedEventArgs(0,0){RoutedEvent=Thumb.DragStartedEvent});
+                opacitySlider.Value=20;
+                opacitySlider.Value=65;
+                Check(((TextBox)Property("그림 투명도 (%)")!).Text=="65","Slider synchronizes the number");
+                Check(canvas.Children.OfType<Border>().Single(x=>x.Tag is PdfEditElement item&&item.Id==stamp.Id).Child is Image {Opacity:.35},"Slider previews transparency while dragging");
+                opacitySlider.RaiseEvent(new DragCompletedEventArgs(0,0,false){RoutedEvent=Thumb.DragCompletedEvent});
+                Check(Stamp().ImageOpacity==.35,"Slider commits transparency at release");
+                view.Undo();Check(Stamp().ImageOpacity==1,"Slider drag is undone in one step");
+                var aspect = fields.Children.OfType<CheckBox>().Single(x=>Equals(x.Content,"가로세로 비율 고정"));
+                Check(aspect.IsChecked==true && Stamp().LockImageAspectRatio,"Stamp aspect ratio is locked by default");
+                var beforeResize=Stamp();
+                aspect.IsChecked=false;
+                aspect.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                var widthBox=(TextBox)Property("너비 (pt)")!;
+                widthBox.Text=(beforeResize.Width+12).ToString(System.Globalization.CultureInfo.CurrentCulture);
+                widthBox.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                    PresentationSource.FromVisual(widthBox),Environment.TickCount,System.Windows.Input.Key.Enter){
+                    RoutedEvent=System.Windows.Input.Keyboard.PreviewKeyDownEvent
+                });
+                Check(!Stamp().LockImageAspectRatio&&Math.Abs(Stamp().Width-beforeResize.Width-12)<.01&&Stamp().Height==beforeResize.Height,
+                    "Unlocked stamp width does not change height");
+                var freeStamp=Stamp();
+                var movedStamp=Stamp();
+                Call(view,"ResizeSelectionFrom",new List<PdfEditElement>{movedStamp},new[]{freeStamp},new Vector(15,7));
+                Check(Math.Abs(movedStamp.Width-freeStamp.Width-15)<.01&&Math.Abs(movedStamp.Height-freeStamp.Height-7)<.01,
+                    "Unlocked handle resizes axes independently");
+                view.Undo();view.Undo();Check(Stamp().LockImageAspectRatio,"Undo restores aspect lock");
                 var rotation=(ComboBox)Property("회전")!;
                 Check(Property("색상")==null&&Property("너비 (pt)")!=null,"Stamp exposes only its applicable properties");
                 rotation.SelectedItem=rotation.Items.OfType<ComboBoxItem>().Single(x=>Equals(x.Tag,"90"));

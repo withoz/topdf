@@ -277,6 +277,15 @@ public partial class PdfEditorView
                         x.Y=anchor.Y+(old.Y-anchor.Y)*factor;
                     }
                     x.Height=old.Height;
+                } else if (items.Count == 1 && x.Kind == "stamp" && !old.LockImageAspectRatio) {
+                    var angle = old.Rotation * Math.PI / 180;
+                    var horizontal = new Vector(Math.Cos(angle), Math.Sin(angle));
+                    var vertical = new Vector(-horizontal.Y, horizontal.X);
+                    x.Width = Math.Max(1, old.Width + Vector.Multiply(total, horizontal));
+                    x.Height = Math.Max(1, old.Height + Vector.Multiply(total, vertical));
+                    var center = anchor + horizontal * (x.Width / 2) + vertical * (x.Height / 2);
+                    x.X = center.X - x.Width / 2;
+                    x.Y = center.Y - x.Height / 2;
                 } else if(items.Count==1 && x.Rotation==0 && x.Kind is ("text" or "note")) {
                     x.AutoWidth=false;
                     x.Width=Math.Max(24,old.Width+total.X);
@@ -424,6 +433,7 @@ public partial class PdfEditorView
     static readonly JsonSerializerOptions ProjectJson=new(){PropertyNamingPolicy=JsonNamingPolicy.CamelCase,PropertyNameCaseInsensitive=true};
     public async Task SaveProjectAsync(string destination)
     {
+        commitPendingStampOpacity?.Invoke();
         if(saving||info==null)throw new InvalidOperationException("준비 후 저장하세요.");if(File.Exists(destination))throw new IOException("새 파일 이름을 선택하세요.");EndGraphic();ApplyInlineText();saving=true;EnableEditing(false);
         var temp=System.IO.Path.Combine(work,Guid.NewGuid()+".topdf");
         try {
@@ -458,7 +468,7 @@ public partial class PdfEditorView
         var loaded=JsonSerializer.Deserialize<PdfEditPlan>(await File.ReadAllTextAsync(System.IO.Path.Combine(folder,"plan.json")),ProjectJson)??throw new IOException("잘못된 편집 파일");var pdf=System.IO.Path.Combine(folder,"source.pdf");var inspected=await PdfEditService.InspectAsync(pdf,work,lifetime.Token);
         if(loaded.FormatVersion!=1 || loaded.SourceSha256!=inspected.SourceSha256 || loaded.Pages.Count==0 || loaded.Pages.Select(x=>x.SourceIndex).Distinct().Count()!=loaded.Pages.Count || loaded.Pages.Any(x=>x.SourceIndex<0||x.SourceIndex>=inspected.Pages.Length||x.Rotation%90!=0) || loaded.Pages.Sum(x=>x.Elements.Count)>5000)throw new IOException("편집 파일 검증 실패");
         var all=loaded.Pages.SelectMany(x=>x.Elements).ToArray();if(all.Select(x=>x.Id).Distinct().Count()!=all.Length)throw new IOException("중복 편집 항목");
-        foreach(var item in all){if(!Guid.TryParseExact(item.Id,"N",out _) || (item.FontFamily is not ("Malgun Gothic" or "Gulim" or "Batang") && !(item.Kind=="replace" && item.PreserveSourceStyle)) || item.Alignment is not ("left" or "center" or "right"))throw new IOException("잘못된 편집 속성");if(!double.IsFinite(item.X+item.Y+item.Width+item.Height+item.FontSize+item.StrokeWidth)||item.Width<=0||item.Height<=0||item.Points.Count>10000||item.Points.Any(p=>p.Length!=2||p.Any(v=>!double.IsFinite(v)||v<0||v>1)))throw new IOException("잘못된 편집 좌표");if(item.Kind=="stamp"){var asset=System.IO.Path.GetFullPath(System.IO.Path.Combine(folder,item.ImagePath??""));if(!asset.StartsWith(folder+System.IO.Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new IOException("잘못된 이미지 경로");item.ImagePath=asset;}}
+        foreach(var item in all){if(!Guid.TryParseExact(item.Id,"N",out _) || (item.FontFamily is not ("Malgun Gothic" or "Gulim" or "Batang") && !(item.Kind=="replace" && item.PreserveSourceStyle)) || item.Alignment is not ("left" or "center" or "right"))throw new IOException("잘못된 편집 속성");if(!double.IsFinite(item.X+item.Y+item.Width+item.Height+item.FontSize+item.StrokeWidth)||item.Width<=0||item.Height<=0||item.Points.Count>10000||item.Points.Any(p=>p.Length!=2||p.Any(v=>!double.IsFinite(v)||v<0||v>1)))throw new IOException("잘못된 편집 좌표");if(item.Kind=="stamp"){if(!double.IsFinite(item.ImageOpacity)||item.ImageOpacity<0||item.ImageOpacity>1)throw new IOException("잘못된 도장 투명도");var asset=System.IO.Path.GetFullPath(System.IO.Path.Combine(folder,item.ImagePath??""));if(!asset.StartsWith(folder+System.IO.Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new IOException("잘못된 이미지 경로");item.ImagePath=asset;}}
         _ = await PdfEditService.ExportAsync(pdf,folder,loaded,lifetime.Token);
         UsePageSource(pdf,inspected);baselineSnapshot=pdf;plan=loaded;undo.Clear();redo.Clear();selectedIds.Clear();selectedId="";selectedSource=null;sourceTexts.Clear();renders.Clear();BindPages(0);MarkClean();RefreshPdfNotes(openIfPresent:true);await RenderPageAsync();
         } finally {saving=false;EnableEditing(info!=null);}

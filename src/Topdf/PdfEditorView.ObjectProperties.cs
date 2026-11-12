@@ -50,7 +50,7 @@ public partial class PdfEditorView
         var fingerprint = JsonSerializer.Serialize(items.Select(x => new {
             x.Id, x.Kind, x.Color, x.Fill, x.FillUsesStrokeColor, x.FillOpacity, x.StrokeWidth, Line = EffectiveLineStyle(x),
             x.FontFamily, x.FontSize, x.Alignment, x.Width, x.Height, x.Rotation,
-            x.TextBoxFill,x.TextBoxBorderColor,x.TextBoxBorderWidth
+            x.TextBoxFill,x.TextBoxBorderColor,x.TextBoxBorderWidth,x.ImageOpacity,x.LockImageAspectRatio
         }));
         if (fingerprint == propertiesFingerprint) return;
         propertiesFingerprint = fingerprint;
@@ -173,9 +173,24 @@ public partial class PdfEditorView
         }
         if (items.All(x => x.Kind == "stamp"))
         {
+            AddStampOpacityField(items, revision);
+            if (items.Count == 1) {
+                var editBackground = new Button { Content = "배경 제거…", Margin = new Thickness(0, 6, 0, 0) };
+                editBackground.Click += (_, _) => EditStampBackground(items[0]);
+                ObjectPropertiesFields.Children.Add(editBackground);
+            }
+            var aspectValues = items.Select(item => item.LockImageAspectRatio).Distinct().ToArray();
+            var lockRatio = new CheckBox { IsChecked = aspectValues.Length == 1 ? aspectValues[0] : null,
+                Content = "가로세로 비율 고정", Margin = new Thickness(0, 6, 0, 0) };
+            lockRatio.Click += (_, _) => {
+                if (revision == propertiesRevision)
+                    ApplyDockedProperty(item => item.LockImageAspectRatio,
+                        (item, locked) => item.LockImageAspectRatio = locked, lockRatio.IsChecked == true, updateSpread: false);
+            };
+            ObjectPropertiesFields.Children.Add(lockRatio);
             var size = SizeOfPage();
-            Number("너비 (pt)", x => x.Width, (x, value) => { x.Height *= value / x.Width; x.Width = value; }, 1, Math.Max(size.W, size.H));
-            Number("높이 (pt)", x => x.Height, (x, value) => { x.Width *= value / x.Height; x.Height = value; }, 1, Math.Max(size.W, size.H));
+            Number("너비 (pt)", x => x.Width, (x, value) => { if(x.LockImageAspectRatio)x.Height *= value / x.Width; x.Width = value; }, 1, Math.Max(size.W, size.H));
+            Number("높이 (pt)", x => x.Height, (x, value) => { if(x.LockImageAspectRatio)x.Width *= value / x.Height; x.Height = value; }, 1, Math.Max(size.W, size.H));
             Choice("회전", x => x.Rotation.ToString(CultureInfo.InvariantCulture),
                 (x, value) => x.Rotation = int.Parse(value, CultureInfo.InvariantCulture),
                 [("0", "0°"), ("90", "90°"), ("180", "180°"), ("270", "270°")]);
@@ -210,7 +225,7 @@ public partial class PdfEditorView
         StrokeDashArray = LineDashArray(new PdfEditElement { LineStyle = value })
     };
 
-    void AddPropertyField(string label, Control control)
+    void AddPropertyField(string label, FrameworkElement control)
     {
         var field = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         field.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 0, 0, 3) });
@@ -219,7 +234,7 @@ public partial class PdfEditorView
         ObjectPropertiesFields.Children.Add(field);
     }
 
-    async void ApplyDockedProperty<T>(Func<PdfEditElement, T> read, Action<PdfEditElement, T> write, T value)
+    async void ApplyDockedProperty<T>(Func<PdfEditElement, T> read, Action<PdfEditElement, T> write, T value, bool updateSpread = true)
     {
         if ((IsViewing&&!CanEditSpread) || IsBusy || !IsObjectPropertiesOpen || Tool != "선택") return;
         var changed = Objects().Where(item => !EqualityComparer<T>.Default.Equals(read(item), value)).ToArray();
@@ -234,7 +249,10 @@ public partial class PdfEditorView
             }
             SyncRibbonObjectProperties(Selected);
             Commit(before,keepSpread:CanEditSpread);
-            if(CanEditSpread)await UpdateViewingAsync(true,true);
+            if(CanEditSpread) {
+                if(updateSpread)await UpdateViewingAsync(true,true);
+                else { PreviewStampOpacity(changed,null); RefreshObjectProperties(); }
+            }
             else if (changed.Any(x => x.Kind == "replace")) _ = RenderPageAsync();
         }
         catch (Exception ex)

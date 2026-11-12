@@ -24,6 +24,9 @@
     <Content Condition="'$(TopdfSmart)' != 'false'" Include="engines/document_tools.py" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/pdf_typography.py" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/pdf_text_edit.py" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="engines/office_export.py" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="engines/xlsx_grid.py" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="engines/cad_export.py" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/format_export.py" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/pdf_viewport.py" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="engines/pdf_edit.py" CopyToOutputDirectory="PreserveNewest" />

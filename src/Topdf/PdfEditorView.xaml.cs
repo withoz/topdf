@@ -65,7 +65,7 @@ public partial class PdfEditorView : UserControl
     public event EventHandler? Saved;
     Window DialogOwner => Window.GetWindow(this);
     public void DisposeEditor() { StopDocumentPan();zoomMonitor.Stop();ClearPageSearch();StopRecovery();lifetime.Cancel(); viewportWorker.Dispose(); renderCancellation?.Cancel(); }
-    public bool CanClose() { var e = new CancelEventArgs(); CheckClosing(this,e); return !e.Cancel; }
+    public bool CanClose() { commitPendingStampOpacity?.Invoke(); var e = new CancelEventArgs(); CheckClosing(this,e); return !e.Cancel; }
     async Task InitializeAsync()
     {
         try {
@@ -218,7 +218,7 @@ public partial class PdfEditorView : UserControl
             if(selectedSource!=null && element.SourceTextId==selectedSource.Id)continue;
             if (DrawGraphic(element)) continue;
             var padding = element.Kind == "note" ? 7.0 : 1;
-            FrameworkElement content = element.Kind == "stamp" ? new Image { Source = LoadImage(element.ImagePath!), Stretch = Stretch.Fill } :
+            FrameworkElement content = element.Kind == "stamp" ? new Image { Source = LoadImage(element.ImagePath!), Stretch = Stretch.Fill, Opacity = element.ImageOpacity } :
                 element.Kind=="replace" && element.PreserveSourceStyle ? new Border {Background=Brushes.Transparent} : new TextBlock { Text = element.Text, FontFamily = new FontFamily(element.FontFamily), TextAlignment = AlignmentOf(element), FontSize = element.FontSize, LineHeight = element.FontSize*1.35, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)new BrushConverter().ConvertFromString(element.Color)! };
             var border = new AnnotationBorder { Width = element.Width, Height = element.Height, Child = content, Padding = new Thickness(element.Kind == "stamp" ? 0 : padding), Background = element.Kind == "note" ? new SolidColorBrush(Color.FromRgb(255,243,175)) : TextBoxFillBrush(element), IsHitTestVisible=false, IsSelected = ShowSelectionDecorations && (element.Id == selectedId || selectedIds.Contains(element.Id)), Tag = element, RenderTransformOrigin = new Point(.5,.5), RenderTransform = new RotateTransform(element.Rotation) };
             border.MouseLeftButtonDown += ElementMouseDown;
@@ -437,15 +437,8 @@ public partial class PdfEditorView : UserControl
             }
             var candidate=Path.Combine(work,Guid.NewGuid().ToString("N")+(settings.RemoveBackground?".png":Path.GetExtension(dialog.FileName)));
             if(settings.RemoveBackground) {
-                var background=settings.BackgroundColor;
-                var tolerance=settings.Tolerance;
-                var output=await Task.Run(()=>StampImportWindow.RemoveEdgeBackground(image,background,tolerance));
+                await SaveStampCutoutAsync(image, settings, candidate);
                 if(lifetime.IsCancellationRequested)return;
-                var encoder=new PngBitmapEncoder();
-                encoder.Frames.Add(BitmapFrame.Create(output));
-                using var stream=File.Create(candidate);
-                encoder.Save(stream);
-                if(stream.Length>20_000_000)throw new IOException("변환된 도장 이미지가 20MB를 초과했습니다.");
             } else File.Copy(dialog.FileName,candidate,false);
             stamp=candidate;
             if(!CanEditSpread)await EnterFromViewingAsync();
@@ -553,6 +546,7 @@ public partial class PdfEditorView : UserControl
 
     public async Task SaveCopyAsync(string destination,bool markClean=true)
     {
+        commitPendingStampOpacity?.Invoke();
         if (info == null || saving) throw new InvalidOperationException("PDF를 준비한 뒤 저장하세요.");
         if (File.Exists(destination)) throw new IOException("기존 파일을 덮어쓰지 않습니다. 새 파일 이름을 선택하세요.");
         EndGraphic(); ApplyInlineText();

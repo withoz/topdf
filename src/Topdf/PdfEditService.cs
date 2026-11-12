@@ -30,6 +30,8 @@ public sealed class PdfEditElement
     public bool AutoWidth { get; set; }
     public string Fill { get; set; } = "none";
     public bool FillUsesStrokeColor { get; set; }
+    public double ImageOpacity { get; set; } = 1;
+    public bool LockImageAspectRatio { get; set; } = true;
     public double FillOpacity { get; set; } = 1;
     public string TextBoxFill { get; set; } = "none";
     public string TextBoxBorderColor { get; set; } = "none";

@@ -9,6 +9,8 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 from xml.etree import ElementTree as ET
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 MAX_PIXELS = 40_000_000
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -73,13 +75,33 @@ def append_text(body, value):
         element.text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]', '', line)
 
 
-def append_image(body, page, index):
+def word_section(parent, size):
+    section = node(parent, W, 'sectPr')
+    if size:
+        width, height = size
+        node(section, W, 'type', **{f'{{{W}}}val': 'nextPage'})
+        node(section, W, 'pgSz', **{f'{{{W}}}w': str(width), f'{{{W}}}h': str(height),
+                                   f'{{{W}}}orient': 'landscape' if width > height else 'portrait'})
+    else:
+        node(section, W, 'pgSz', **{f'{{{W}}}w': '11906', f'{{{W}}}h': '16838'})
+    node(section, W, 'pgMar', **{f'{{{W}}}{edge}': '0' if size else '720'
+                                for edge in ('top', 'bottom', 'left', 'right', 'header', 'footer', 'gutter')})
+
+
+def append_image(body, page, index, size=None, section_break=False):
     width, height = page.get_size()
-    fit = min(500 / width, 690 / height)
+    fit = (min(size[0] / 20 / width, (size[1] / 20 - 2) / height)
+           if size else min(500 / width, 690 / height))
     extent = dict(cx=str(round(width * fit * 12700)), cy=str(round(height * fit * 12700)))
     paragraph = node(body, W, 'p')
     props = node(paragraph, W, 'pPr')
+    if size:
+        node(props, W, 'spacing', **{f'{{{W}}}before': '0', f'{{{W}}}after': '0',
+                                     f'{{{W}}}line': str(round(height * fit * 20)),
+                                     f'{{{W}}}lineRule': 'exact'})
     node(props, W, 'jc', **{f'{{{W}}}val': 'center'})
+    if section_break:
+        word_section(props, size)
     run = node(paragraph, W, 'r')
     inline = node(node(run, W, 'drawing'), WP, 'inline')
     node(inline, WP, 'extent', **extent)
@@ -104,27 +126,30 @@ def docx(pdf, pages, target, visual):
     document = ET.Element(f'{{{W}}}document')
     body = node(document, W, 'body')
     relations = ET.Element('Relationships', xmlns='http://schemas.openxmlformats.org/package/2006/relationships')
+    size = None
     with ZipFile(target, 'w', ZIP_DEFLATED) as archive:
         for index, number in enumerate(pages, 1):
-            if index > 1:
+            if index > 1 and not visual:
                 node(node(node(body, W, 'p'), W, 'r'), W, 'br', **{f'{{{W}}}type': 'page'})
             with closing(pdf[number - 1]) as page:
+                value = ''
                 if visual:
-                    append_image(body, page, index)
+                    width, height = page.get_size()
+                    scale = min(20, 31680 / max(width, height))
+                    size = (max(144, round(width * scale)), max(144, round(height * scale)))
+                else:
+                    with closing(page.get_textpage()) as text_page:
+                        value = text_page.get_text_bounded()
+                if value.strip():
+                    append_text(body, value)
+                else:
+                    append_image(body, page, index, size, visual and index < len(pages))
                     media = f'media/page-{index}.png'
                     ET.SubElement(relations, 'Relationship', Id=f'rId{index}', Type=f'{R}/image', Target=media)
                     with io.BytesIO() as data:
                         render(page, 150, data)
                         archive.writestr(f'word/{media}', data.getvalue(), compress_type=0)
-                else:
-                    with closing(page.get_textpage()) as text_page:
-                        value = text_page.get_text_bounded()
-                    if not value.strip():
-                        raise ValueError(f'{number}쪽에서 글자를 추출할 수 없습니다. 페이지 모양 유지 방식을 선택하거나 OCR 처리 후 다시 시도해 주세요.')
-                    append_text(body, value)
-        section = node(body, W, 'sectPr')
-        node(section, W, 'pgSz', **{f'{{{W}}}w': '11906', f'{{{W}}}h': '16838'})
-        node(section, W, 'pgMar', **{f'{{{W}}}{edge}': '720' for edge in ('top', 'bottom', 'left', 'right', 'header', 'footer', 'gutter')})
+        word_section(body, size)
         archive.writestr('[Content_Types].xml', '''<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="png" ContentType="image/png"/>
@@ -134,19 +159,22 @@ def docx(pdf, pages, target, visual):
 <Relationship Id="rId1" Type="{R}/officeDocument" Target="word/document.xml"/>
 </Relationships>''')
         archive.writestr('word/document.xml', ET.tostring(document, encoding='utf-8'))
-        if visual:
+        if len(relations):
             archive.writestr('word/_rels/document.xml.rels', ET.tostring(relations, encoding='utf-8'))
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('format', choices=['image-to-pdf', 'docx', 'png', 'jpg'])
+    parser.add_argument('format', choices=['image-to-pdf', 'docx', 'png', 'jpg', 'hwpx', 'xlsx', 'pptx', 'dxf'])
     parser.add_argument('source')
     parser.add_argument('target', type=Path)
     parser.add_argument('--pages', default='')
     parser.add_argument('--dpi', type=int, choices=[96, 150, 300], default=150)
     parser.add_argument('--visual', action='store_true')
+    parser.add_argument('--cad-scale', type=float, default=1)
     args = parser.parse_args()
+    if args.format == 'dxf' and not 1 <= args.cad_scale <= 1000000:
+        parser.error('DXF 도면 축척은 1:1부터 1:1000000까지 입력해 주세요.')
     if args.format == 'image-to-pdf':
         image_to_pdf(args.source, str(args.target))
         return
@@ -168,10 +196,24 @@ def main():
         if args.format == 'docx':
             docx(pdf, pages, args.target, args.visual)
             return
+        if args.format in ('hwpx', 'xlsx', 'pptx'):
+            import office_export
+            if args.format == 'pptx':
+                office_export.pptx(pdf, pages, args.target, args.dpi, render)
+            elif args.format == 'xlsx' and args.visual:
+                office_export.xlsx_visual(pdf, pages, args.target, args.dpi, render)
+            else:
+                exporter = office_export.hwpx if args.format == 'hwpx' else office_export.xlsx
+                exporter(pdf, pages, args.target)
+            return
         for number in pages:
             output = args.target if len(pages) == 1 else args.target.with_stem(f'{args.target.stem}-{number:04}')
             with closing(pdf[number - 1]) as page:
-                render(page, args.dpi, output, jpeg=args.format == 'jpg')
+                if args.format == 'dxf':
+                    from cad_export import dxf
+                    dxf(page, number, output, args.cad_scale)
+                else:
+                    render(page, args.dpi, output, jpeg=args.format == 'jpg')
 
 
 if __name__ == '__main__':

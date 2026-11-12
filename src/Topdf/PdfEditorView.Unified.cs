@@ -143,6 +143,7 @@ public partial class PdfEditorView
     }
     public async Task<string> GetViewingPdfAsync()
     {
+        commitPendingStampOpacity?.Invoke();
         if(info==null || saving)throw new InvalidOperationException("문서 준비가 끝난 뒤 사용하세요.");
         EndGraphic();FinishObjectDrag();ApplyInlineText();
         if(selectedSource!=null && inlineText!=null && inlineText.Text!=(Page?.Elements.FirstOrDefault(x=>x.SourceTextId==selectedSource.Id)?.Text??selectedSource.Text))throw new InvalidOperationException("입력 내용을 적용한 뒤 다시 시도하세요.");

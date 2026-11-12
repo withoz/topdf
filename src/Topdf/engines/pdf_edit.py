@@ -177,7 +177,14 @@ def draw_element(canvas, element, width, height, font):
             if path.suffix.lower() not in ('.png', '.jpg', '.jpeg') or path.stat().st_size > 20_000_000: raise ValueError('도장은 20MB 이하 PNG/JPG를 사용하세요.')
             with Image.open(path) as image:
                 if image.width*image.height > 40_000_000: raise ValueError('도장 이미지 크기 한도 초과')
+                opacity = scalar(element.get('imageOpacity', 1))
+                if not 0 <= opacity <= 1:
+                    raise ValueError('도장 투명도는 0~100%여야 합니다.')
+                if opacity == 0:
+                    return
                 rgba = image.convert('RGBA')
+                if opacity < 1:
+                    rgba.putalpha(rgba.getchannel('A').point([round(value * opacity) for value in range(256)]))
                 canvas.drawImage(ImageReader(rgba), 0, 0, width=w, height=h, mask='auto')
         elif kind in ('text', 'note', 'replace'):
             text = element.get('text', '')

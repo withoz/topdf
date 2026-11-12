@@ -9,7 +9,7 @@ public static partial class PdfEditService
         try { File.Delete(file); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 
-    public static async Task<int> ExportFormatAsync(string source, string target, string format, string pages, int dpi, bool visual, CancellationToken cancellation)
+    public static async Task<int> ExportFormatAsync(string source, string target, string format, string pages, int dpi, bool visual, CancellationToken cancellation, double cadScale = 1)
     {
         target = Path.GetFullPath(target);
         var parent = Path.GetDirectoryName(target)!;
@@ -21,6 +21,7 @@ public static partial class PdfEditService
             var temporaryTarget = Path.Combine(localStage, Path.GetFileName(target));
             var arguments = new List<string> { format, source, temporaryTarget, "--pages", pages, "--dpi", dpi.ToString() };
             if (visual) arguments.Add("--visual");
+            if (format == "dxf") arguments.AddRange(["--cad-scale", cadScale.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
             await RunAsync(arguments.ToArray(), cancellation, "format_export.py");
             var files = Directory.GetFiles(localStage);
             if (files.Length == 0) throw new IOException("내보낸 파일을 찾을 수 없습니다.");

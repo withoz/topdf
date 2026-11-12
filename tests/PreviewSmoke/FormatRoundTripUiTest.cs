@@ -22,7 +22,9 @@ internal static class FormatRoundTripUiTest
                 var menu = (MenuItem)window.FindName("MenuExportOther");
                 var editor = window.ActivePdfEditor ?? throw new Exception("Source editor was not opened.");
                 await editor.Ready.WaitAsync(token);
-                if (!menu.IsEnabled || menu.Items.Count != 3) throw new Exception("Export menu is not wired.");
+                var formats = new[] { "docx", "hwpx", "xlsx", "pptx", "dxf", "png", "jpg" };
+                if (!menu.IsEnabled || !menu.Items.OfType<MenuItem>().Select(item => item.Tag as string).SequenceEqual(formats))
+                    throw new Exception("Export menu is not wired.");
                 foreach (var columns in new[] { 2, 3 }) {
                     await editor.SetViewColumnsAsync(columns);
                     await editor.SetUnifiedZoomAsync(200);
@@ -45,11 +47,24 @@ internal static class FormatRoundTripUiTest
                     await PdfEditService.ExportFormatAsync(snapshot, jpg, "jpg", "2", 150, false, token) != 1)
                     throw new Exception("Unexpected export file count.");
 
+                var converted = new List<(string Path, int Pages)>();
+                foreach (var format in new[] { "hwpx", "xlsx", "pptx", "dxf" }) {
+                    var target = Path.Combine(output, $"문서.{format}");
+                    var count = await PdfEditService.ExportFormatAsync(snapshot, target, format, "1-2", 150, false, token);
+                    if (count != (format == "dxf" ? 2 : 1)) throw new Exception($"Unexpected {format} file count.");
+                    if (format == "dxf") {
+                        converted.Add((Path.Combine(output, "문서-0001.dxf"), 1));
+                        converted.Add((Path.Combine(output, "문서-0002.dxf"), 1));
+                    } else {
+                        converted.Add((target, 2));
+                    }
+                }
+
                 var list = (DataGrid)window.FindName("Files");
                 foreach (var (path, pages) in new[] {
                     (text, 2), (visual, 2), (Path.Combine(output, "쪽-0001.png"), 1),
                     (Path.Combine(output, "쪽-0003.png"), 1), (jpg, 1)
-                }) {
+                }.Concat(converted)) {
                     await window.OpenFilesAsync([path]).WaitAsync(token);
                     var job = list.Items.Cast<FileJob>().Single(item => item.Source == path);
                     if (job.Pdf is not { } pdf) throw new Exception($"Open failed: {path} ({job.Detail})");
