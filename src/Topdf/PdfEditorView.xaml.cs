@@ -50,15 +50,16 @@ public partial class PdfEditorView : UserControl
     string ColorValue => (EditColor.SelectedItem as ComboBoxItem)?.Tag as string ?? EditColor.SelectedIndex switch { 1 => "#C92127", 2 => "#1755B5", _ => "#111111" };
     string Tool => ((ComboBoxItem)EditTool.SelectedItem).Content.ToString()!;
 
-    public PdfEditorView(string pdf, string? displayName = null)
+    public PdfEditorView(string pdf, string? displayName = null, bool fitOnOpen = false)
     {
         InitializeComponent();
+        RefreshPagePane();
         if(!BuildFeatures.SmartEnabled)PageOcrMenuItem.Visibility=Visibility.Collapsed; InitializeRibbon();InitializeEditCommands(); input = Path.GetFullPath(pdf);
         suggestedName = Path.GetFileNameWithoutExtension(displayName ?? input) + "_수정.pdf";
 
         EnableEditing(false);
         EditPages.PreviewMouseDown += (_,_) => ApplyInlineText();
-        Loaded += async (_, _) => { if (initialized) return; initialized = true; await InitializeAsync(); };
+        Loaded += async (_, _) => { if (initialized) return; initialized = true; await InitializeAsync(fitOnOpen); };
 
     }
     bool initialized;
@@ -66,7 +67,7 @@ public partial class PdfEditorView : UserControl
     Window DialogOwner => Window.GetWindow(this);
     public void DisposeEditor() { StopDocumentPan();zoomMonitor.Stop();ClearPageSearch();StopRecovery();lifetime.Cancel(); viewportWorker.Dispose(); renderCancellation?.Cancel(); }
     public bool CanClose() { commitPendingStampOpacity?.Invoke(); var e = new CancelEventArgs(); CheckClosing(this,e); return !e.Cancel; }
-    async Task InitializeAsync()
+    async Task InitializeAsync(bool fitOnOpen)
     {
         try {
             Directory.CreateDirectory(work);
@@ -80,6 +81,10 @@ public partial class PdfEditorView : UserControl
             baselineSnapshot=snapshot;
             plan = new() { SourceSha256 = info.SourceSha256, Pages = info.Pages.Select(p => new PdfEditPage { SourceIndex = p.SourceIndex }).ToList() };
             MarkClean(); BindPages(0); EnableEditing(true);
+            if(fitOnOpen && EditScroll.ActualWidth>0 && EditScroll.ActualHeight>0){
+                zoomFit="page";
+                SetZoomLabel(EditingFitPercent(true));
+            }
             RefreshPdfNotes(openIfPresent:true);
             await RenderPageAsync(); ready.TrySetResult();
         } catch (OperationCanceledException) { ready.TrySetCanceled(); }
@@ -145,6 +150,45 @@ public partial class PdfEditorView : UserControl
         await RenderPageAsync();
     }
     (string Snapshot,int Page,int Rotation)? displayedPage;
+    (string Key, Task<string> Render)? upcomingPage;
+
+    async Task PrepareNearbyPagesAsync(int selectedIndex, long version, int pixels)
+    {
+        try {
+            // Let the current page paint before starting background rendering.
+            await Task.Delay(120,lifetime.Token);
+            var source=snapshot;
+            foreach(var offset in new[]{1,-1,2,-2}){
+                if(version!=renderVersion||source!=snapshot||IsNativeViewing||IsSpreadViewing||upcomingPage!=null)return;
+                var index=selectedIndex+offset;
+                if(index<0||index>=plan.Pages.Count)continue;
+                var page=plan.Pages[index];
+                if(page.Elements.Any(element=>element.Kind=="replace"))continue;
+                var key=PageRenderKey(page,pixels);
+                if(renders.ContainsKey(key))continue;
+                var render=PdfEditService.RenderAsync(source,work,page.SourceIndex,page.Rotation,lifetime.Token,maxSize:pixels);
+                upcomingPage=(key,render);
+                try {
+                    var path=await render;
+                    if(source==snapshot&&!lifetime.IsCancellationRequested)renders[key]=path;
+                } finally {
+                    upcomingPage=null;
+                }
+            }
+        } catch(OperationCanceledException) { }
+        catch(Exception) { /* A requested page can still render on demand. */ }
+    }
+
+    async Task<string> GetPageImageAsync(PdfEditPage page,string key,int pixels,CancellationToken token)
+    {
+        if(renders.TryGetValue(key,out var path))return path;
+        if(upcomingPage is {} upcoming && upcoming.Key==key){
+            try { return await upcoming.Render.WaitAsync(token); }
+            catch(Exception) when (!token.IsCancellationRequested) { /* Retry on demand. */ }
+        }
+        return await PdfEditService.RenderAsync(snapshot,work,page.SourceIndex,page.Rotation,token,plan,pixels);
+    }
+
     async Task RenderPageAsync()
     {
         StopContinuousLine();
@@ -162,22 +206,14 @@ public partial class PdfEditorView : UserControl
             EditStatus.Text = "페이지를 불러오고 있습니다…";
         }
         try {
-            var replacements=System.Text.Json.JsonSerializer.Serialize(page.Elements.Where(element=>element.Kind=="replace"));
-            var key=$"{page.SourceIndex}:{page.Rotation}:{replacements}";
-            var textTask=sourceTexts.TryGetValue(page.SourceIndex,out var cachedText)
-                ? Task.FromResult(cachedText)
-                : PdfEditService.TextAsync(snapshot,work,page.SourceIndex,token);
-            var imageTask=renders.TryGetValue(key,out var cachedImage)
-                ? Task.FromResult(cachedImage)
-                : PdfEditService.RenderAsync(snapshot,work,page.SourceIndex,page.Rotation,token,plan);
-            try { await Task.WhenAll(textTask,imageTask); }
-            catch (Exception) when (textTask.IsFaulted && imageTask.IsCompletedSuccessfully && !token.IsCancellationRequested) {
-                // A text worker failure must not prevent the page image from opening.
-            }
-            if(version!=renderVersion||token.IsCancellationRequested)return;
+            var pixels = PagePreviewPixels(PageDisplayPixels());
+            var key = PageRenderKey(page, pixels);
+            var hasCachedText=sourceTexts.TryGetValue(page.SourceIndex,out var cachedText);
+            var textTask=hasCachedText?null:ReadPageTextAsync(snapshot,page.SourceIndex,token);
+            var imageTask=GetPageImageAsync(page,key,pixels,token);
             var image=await imageTask;
+            if(version!=renderVersion||token.IsCancellationRequested)return;
             renders[key]=image;
-            if(textTask.IsCompletedSuccessfully)sourceTexts[page.SourceIndex]=textTask.Result;
             var bitmap=LoadImage(image);
             if(refreshInPlace && inlineText!=null){
                 UpdateInlineBasePage(bitmap);
@@ -192,11 +228,24 @@ public partial class PdfEditorView : UserControl
             }
             ScheduleViewportRender();
             var pageLabel=$"{EditPages.SelectedIndex+1}/{plan.Pages.Count}쪽";
-            EditStatus.Text = !textTask.IsCompletedSuccessfully ? $"{pageLabel} · 본문을 읽지 못했습니다. 페이지 보기와 주석은 사용할 수 있습니다."
-                : textTask.Result.Length == 0 ? $"{pageLabel} · 선택 가능한 본문이 없습니다. 스캔·윤곽선·특수 PDF 구조는 OCR 또는 원본 수정이 필요합니다."
+            if(textTask!=null)EditStatus.Text=$"{pageLabel} · 본문을 읽고 있습니다…";
+            var text=textTask==null?cachedText:await textTask;
+            if(version!=renderVersion||token.IsCancellationRequested)return;
+            if(textTask!=null&&text!=null){
+                sourceTexts[page.SourceIndex]=text;
+                AddSourceTextHitTargets();
+            }
+            EditStatus.Text = text==null ? $"{pageLabel} · 본문을 읽지 못했습니다. 페이지 보기와 주석은 사용할 수 있습니다."
+                : text.Length == 0 ? $"{pageLabel} · 선택 가능한 본문이 없습니다. 스캔·윤곽선·특수 PDF 구조는 OCR 또는 원본 수정이 필요합니다."
                 : $"{pageLabel} · 본문 클릭 → 직접 입력 → Enter 적용";
+            if(!refreshInPlace)_=PrepareNearbyPagesAsync(EditPages.SelectedIndex,version,pixels);
         } catch (OperationCanceledException) { }
         catch (Exception ex) { if (version == renderVersion){EditStatus.Visibility=Visibility.Visible;EditStatus.Text=ex.Message;EditSurface.Visibility=Visibility.Visible;EditCanvas.IsEnabled=!saving;} }
+    }
+    async Task<PdfSourceText[]?> ReadPageTextAsync(string source,int page,CancellationToken token)
+    {
+        try { return await PdfEditService.TextAsync(source,work,page,token); }
+        catch(Exception) { return null; } // Viewing and annotations can work without source text.
     }
     BitmapImage LoadImage(string path)
     {

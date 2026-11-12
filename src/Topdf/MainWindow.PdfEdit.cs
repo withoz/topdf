@@ -31,7 +31,7 @@ public partial class MainWindow
     async Task StartPdfEditorAsync(string source,string name)
     {
         if(pdfEditor!=null){if(string.Equals(editorSource,source,StringComparison.OrdinalIgnoreCase))return;if(!pdfEditor.CanClose())return;EndPdfEditing();}
-        var editor=new PdfEditorView(source,name);pdfEditor=editor;editorSource=source;editorJob=SelectedJob;
+        var editor=new PdfEditorView(source,name,fitOnOpen:preferSharedPageEditor);pdfEditor=editor;editorSource=source;editorJob=SelectedJob;
         var job=editorJob;
         editor.EditStateChanged+=(_,_)=>{if(job!=null)job.HasUnsavedEdits=editor.HasUnsavedEdits;};
         editor.Saved+=async(_,_)=>{

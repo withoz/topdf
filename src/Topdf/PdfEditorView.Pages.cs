@@ -11,7 +11,7 @@ namespace Topdf;
 public partial class PdfEditorView
 {
     public int ViewColumns {get;private set;}=1;
-    bool pagePaneWanted;
+    bool pagePaneWanted = true;
     public Func<Task>? ToggleNativePagePane {get;set;}
     readonly SemaphoreSlim previewSlots=new(2);
     readonly Dictionary<string,string> pagePreviews=[];
@@ -69,7 +69,7 @@ public partial class PdfEditorView
     }
     void ThumbnailScrolled(object sender,ScrollChangedEventArgs e)
     {
-        if(twoThumbnailColumns&&EditPages.IsVisible)
+        if(EditPages.IsVisible)
             RefreshVisibleThumbnails(EditPages);
     }
     void RefreshVisibleThumbnails(DependencyObject parent)
@@ -100,10 +100,9 @@ public partial class PdfEditorView
         if(Math.Abs(PageNavigationPanel.Width-width)<.1)return;
         var anchor=new Point(EditScroll.ViewportWidth/2,EditScroll.ViewportHeight/2);
         var pagePoint=EditScroll.TranslatePoint(anchor,EditSurface);
-        if(EditingArea.IsVisible)zoomFit=null;
         PageNavigationPanel.Width=width;
         UpdateLayout();
-        if(!EditingArea.IsVisible)return;
+        if(!EditingArea.IsVisible||zoomFit!=null)return;
         var after=EditSurface.TranslatePoint(pagePoint,EditScroll);
         EditScroll.ScrollToHorizontalOffset(EditScroll.HorizontalOffset+after.X-EditScroll.ViewportWidth/2);
         EditScroll.ScrollToVerticalOffset(EditScroll.VerticalOffset+after.Y-EditScroll.ViewportHeight/2);
@@ -176,7 +175,17 @@ public partial class PdfEditorView
     {
         if(sender is Button {DataContext:PageTile tile})EditPages.SelectedIndex=tile.Index;
     }
-    void ThumbnailContextChanged(object sender,DependencyPropertyChangedEventArgs e){if(sender is Image image){image.Source=null;if(image.IsLoaded)LoadPageThumbnail(sender,new RoutedEventArgs());}}
+    void ThumbnailContextChanged(object sender,DependencyPropertyChangedEventArgs e)
+    {
+        if(sender is not Image image)return;
+        CancelPreviewImage(image,new RoutedEventArgs());
+        image.Source=null;
+        LoadPageThumbnail(image,new RoutedEventArgs());
+    }
+    void ThumbnailVisibilityChanged(object sender,DependencyPropertyChangedEventArgs e)
+    {
+        if(e.NewValue is true)LoadPageThumbnail(sender,new RoutedEventArgs());
+    }
     void SpreadContextChanged(object sender,DependencyPropertyChangedEventArgs e){if(sender is Image image){image.Source=null;image.Tag=null;ClearSpreadDetail(image);if(image.IsLoaded)LoadSpreadImage(sender,new RoutedEventArgs());}}
     void UnloadSpreadImage(object sender,RoutedEventArgs e)
     {
@@ -209,7 +218,8 @@ public partial class PdfEditorView
     }
     async void LoadPageThumbnail(object sender,RoutedEventArgs e)
     {
-        if(sender is not Image {DataContext:PdfEditPage page} image||info==null)return;
+        if(sender is not Image {DataContext:PdfEditPage page, IsLoaded:true, IsVisible:true, Source:null} image||
+            info==null||previewRequests.ContainsKey(image))return;
         if(twoThumbnailColumns){
             var top=image.TranslatePoint(new Point(),EditPages).Y;
             if(!image.IsVisible||EditPages.ActualHeight<=0||top>2*EditPages.ActualHeight||

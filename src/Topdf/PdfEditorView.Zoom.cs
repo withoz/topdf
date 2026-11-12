@@ -163,11 +163,20 @@ public partial class PdfEditorView
         if(IsNativeViewing)await NativeZoomAsync(zoomFit);
         else if(IsSpreadViewing)UpdateSpreadSizes();
         else{
-            var size=SizeOfPage();var scale=Math.Max(20,EditScroll.ActualWidth-60)/size.W;
-            if(page)scale=Math.Min(scale,Math.Max(20,EditScroll.ActualHeight-60)/size.H);
-            SetEditingZoom(scale*75,null);EditScroll.ScrollToHorizontalOffset(0);if(page)EditScroll.ScrollToVerticalOffset(0);
+            SetEditingZoom(EditingFitPercent(page),null);EditScroll.ScrollToHorizontalOffset(0);if(page)EditScroll.ScrollToVerticalOffset(0);
         }
     });
+    double EditingFitPercent(bool page)
+    {
+        var size=SizeOfPage();
+        var padding=EditScroll.Padding;
+        var width=Math.Max(20,EditScroll.ActualWidth-padding.Left-padding.Right-4);
+        var height=Math.Max(20,EditScroll.ActualHeight-padding.Top-padding.Bottom-4);
+        var scale=width/size.W;
+        if(page)scale=Math.Min(scale,height/size.H);
+        else if(size.H*scale>height)scale=Math.Max(20,width-SystemParameters.VerticalScrollBarWidth)/size.W;
+        return scale*75;
+    }
     bool pageWheelNavigating;
 
     async void ZoomMouseWheel(object sender,MouseWheelEventArgs e)
@@ -233,6 +242,20 @@ public partial class PdfEditorView
         var mode=zoomFit;zoomResize?.Cancel();zoomResize?.Dispose();zoomResize=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=zoomResize.Token;
         try{await Task.Delay(180,token);if(!token.IsCancellationRequested&&zoomFit==mode)await FitUnifiedZoomAsync(mode=="page");}catch(OperationCanceledException){}
     }
+    double PageDisplayPixels()
+    {
+        var size = SizeOfPage();
+        var dpi = VisualTreeHelper.GetDpi(this);
+        return Math.Max(size.W * dpi.DpiScaleX, size.H * dpi.DpiScaleY) * CurrentZoomPercent / 75;
+    }
+
+    static int PagePreviewPixels(double displayPixels) =>
+        (int)Math.Clamp(Math.Ceiling(displayPixels * 1.25 / 300) * 300, 2400, 4200);
+
+    string PageRenderKey(PdfEditPage page, int pixels) =>
+        $"{snapshot}:{page.SourceIndex}:{page.Rotation}:{pixels}:" +
+        System.Text.Json.JsonSerializer.Serialize(page.Elements.Where(element => element.Kind == "replace"));
+
     async void ScheduleSharperPreview()
     {
         sharpPreview?.Cancel();sharpPreview?.Dispose();
@@ -240,12 +263,11 @@ public partial class PdfEditorView
         sharpPreview=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=sharpPreview.Token;var version=renderVersion;var page=Page;
         try{
             await Task.Delay(250,token);
-            var size=SizeOfPage();var dpi=VisualTreeHelper.GetDpi(this);
-            var requested=Math.Max(size.W*dpi.DpiScaleX,size.H*dpi.DpiScaleY)*CurrentZoomPercent/75;
+            var requested=PageDisplayPixels();
             if(requested>4200)return;
-            var pixels=(int)Math.Clamp(Math.Ceiling(requested/300)*300,1800,4200);
+            var pixels=PagePreviewPixels(requested);
             if(EditPageImage.Source is BitmapSource visible&&Math.Max(visible.PixelWidth,visible.PixelHeight)>=pixels*0.9)return;
-            var key=$"sharp:{page.SourceIndex}:{page.Rotation}:{pixels}:"+System.Text.Json.JsonSerializer.Serialize(page.Elements.Where(x=>x.Kind=="replace"));
+            var key=PageRenderKey(page,pixels);
             if(!renders.TryGetValue(key,out var path)){path=await PdfEditService.RenderAsync(snapshot,work,page.SourceIndex,page.Rotation,token,PdfEditService.Clone(plan),pixels);renders[key]=path;}
             if(!token.IsCancellationRequested&&version==renderVersion&&!IsNativeViewing&&!IsSpreadViewing&&selectedSource==null&&addedTextCommit==null)EditPageImage.Source=LoadImage(path);
         }catch(OperationCanceledException){}catch(Exception){/* Keep the existing visible preview if optional sharpening fails. */}

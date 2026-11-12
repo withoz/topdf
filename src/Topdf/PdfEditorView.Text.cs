@@ -30,9 +30,10 @@ public partial class PdfEditorView
             ? (BuildFeatures.SmartEnabled ? "이 쪽에서 수정할 수 있는 텍스트가 없습니다. 목차에서 현재 쪽 OCR을 사용할 수 있습니다." : "이 쪽에서 수정할 수 있는 텍스트가 없습니다.")
             : null;
     }
-    void DrawSourceTexts()
+    void AddSourceTextHitTargets()
     {
         RefreshTextAvailability();
+        var index=0;
         foreach(var original in SourceTextItems) {
             if(Page!.Elements.Any(e=>e.SourceTextId==original.Id)) continue;
             var item=DisplayText(original);
@@ -41,8 +42,12 @@ public partial class PdfEditorView
                 if(Tool != "본문" || saving) return;
                 SelectSourceText(original.Id); e.Handled=true;
             };
-            Canvas.SetLeft(box,item.X);Canvas.SetTop(box,item.Y);EditCanvas.Children.Add(box);
+            Canvas.SetLeft(box,item.X);Canvas.SetTop(box,item.Y);EditCanvas.Children.Insert(index++,box);
         }
+    }
+    void DrawSourceTexts()
+    {
+        AddSourceTextHitTargets();
         if(selectedSource==null) return;
         var selected=EditingText(selectedSource);
         inlineText=new TextBox { Text=EditText.Text,Width=selected.EditWidth,Height=selected.EditHeight,

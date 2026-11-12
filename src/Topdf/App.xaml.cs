@@ -60,7 +60,7 @@ public partial class App : Application
             return;
         }
         base.OnStartup(e);
-        var window = new MainWindow(preferSharedPageEditor:true);
+        var window = new MainWindow(preferSharedPageEditor:true) { WindowState = WindowState.Maximized };
         window.Show();
         MainWindow=window;
         ShutdownMode=ShutdownMode.OnMainWindowClose;
