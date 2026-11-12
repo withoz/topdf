@@ -32,6 +32,7 @@ if (-not $SkipNative) {
             Copy-Item -LiteralPath $archive -Destination $sourceFolder -Force
         }
     }
+    & (Join-Path $PSScriptRoot 'Add-DwgNotices.ps1')
     # The official office2pdf release ZIP currently omits the license text.
     $officeLicense = Join-Path $vendorRoot 'office2pdf/LICENSE'
     Invoke-WebRequest 'https://raw.githubusercontent.com/developer0hye/office2pdf/v0.10.0/LICENSE' -OutFile $officeLicense

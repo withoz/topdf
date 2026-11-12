@@ -1,0 +1,7 @@
+# Microsoft runtime redistribution
+
+TOPDF includes the unmodified Microsoft .NET and Windows Desktop runtime from the Windows x64 runtime packs. The installation also includes Microsoft's WebView2 SDK loader and the Evergreen bootstrapper. License and notice files from the runtime and SDK packages are in this directory. The bootstrapper installs WebView2 under Microsoft's applicable terms. [WebView2 distribution](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution)
+
+The application-local VC++ CRT binaries in the HWP, OCR and local AI engine folders come from the Visual Studio x64 VC Redist directories. TOPDF distributes the original binaries under the applicable Visual Studio terms. Microsoft's REDIST lists permit licensed Visual Studio users to redistribute unmodified eligible runtime files with their program, subject to those terms. [Visual Studio 2022 REDIST list](https://learn.microsoft.com/visualstudio/releases/2022/redistribution) · [Visual Studio 2026 REDIST list](https://learn.microsoft.com/visualstudio/releases/2026/redistribution) · [Microsoft license directory](https://visualstudio.microsoft.com/license-terms/)
+
+The Python embed distribution and NumPy wheel retain their upstream runtime binaries and bundled licenses. The CRT files in those distributions come with their respective upstream packages. Their provenance is distinct from the Visual Studio app-local CRT files copied for TOPDF's engines.

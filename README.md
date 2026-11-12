@@ -10,7 +10,7 @@
 
 ## 설치
 
-Windows 10/11 x64용 **TOPDF 0.4.6 스마트판**을 GitHub에서 받을 수 있습니다. OCR과 로컬 AI 모델을 포함해 설치 파일 크기는 약 700MB입니다. [GitHub 릴리스](https://github.com/withoz/topdf/releases/tag/v0.4.6) · [스마트판 설치 파일](https://github.com/withoz/topdf/releases/download/v0.4.6/TOPDF-Setup-0.4.6-Smart-win-x64.exe)
+Windows 10/11 x64용 **TOPDF 0.4.7 스마트판**을 GitHub에서 받을 수 있습니다. OCR과 로컬 AI 모델을 포함해 설치 파일 크기는 약 700MB입니다. [GitHub 릴리스](https://github.com/withoz/topdf/releases/tag/v0.4.7) · [스마트판 설치 파일](https://github.com/withoz/topdf/releases/download/v0.4.7/TOPDF-Setup-0.4.7-Smart-win-x64.exe)
 
 설치 파일에는 .NET과 Python 런타임이 포함됩니다. WebView2가 없는 PC에서는 최초 설치에 인터넷 연결이 필요합니다. [설치판 안내](docs/INSTALLER.md)
 

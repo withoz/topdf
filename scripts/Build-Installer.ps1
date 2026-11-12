@@ -45,6 +45,8 @@ if($LASTEXITCODE -ne 0){throw 'Incomplete Python runtime'}
 $notices=Join-Path $package 'notices'
 New-Item -ItemType Directory -Force $notices | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE'),(Join-Path $root 'docs/THIRD_PARTY.md') -Destination $notices
+& (Join-Path $PSScriptRoot 'Add-DwgNotices.ps1') -DwgDirectory (Join-Path $package 'engines/vendor/libredwg')
+& (Join-Path $PSScriptRoot 'Add-MicrosoftRuntimeNotices.ps1') -Package $package
 # Copy only files admitted by .gitignore; no customer documents or output/cache.
 $source=Join-Path $stage 'source'
 New-Item -ItemType Directory -Force $source | Out-Null

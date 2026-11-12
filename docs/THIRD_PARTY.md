@@ -9,6 +9,8 @@ TOPDF 자체 소스의 MIT 라이선스는 아래 외부 구성 요소의 라이
 | MiniPdf | 0.43.2 | Apache-2.0 | https://github.com/mini-software/MiniPdf |
 | Ream | 1.33.1 | MIT | https://github.com/alex-krassavin/reamkit |
 | LibreDWG | 0.14 | GPL-3.0-or-later | https://github.com/LibreDWG/libredwg |
+| GNU libiconv | 1.18-1 (MSYS2) | LGPL-2.1-or-later | https://www.gnu.org/software/libiconv/ |
+| PCRE2 | 10.47-1 (MSYS2) | BSD-3-Clause 및 원본 고지 | https://github.com/PCRE2Project/pcre2 |
 | ezdxf | requirements.txt 참조 | MIT | https://github.com/mozman/ezdxf |
 | matplotlib | requirements.txt 참조 | upstream license | https://matplotlib.org/stable/project/license.html |
 | WebView2 | csproj 참조 | Microsoft package terms | https://www.nuget.org/packages/Microsoft.Web.WebView2 |
@@ -25,7 +27,7 @@ TOPDF 자체 소스의 MIT 라이선스는 아래 외부 구성 요소의 라이
 
 Ream은 병합 셀의 shrink-to-fit 계산을 보정합니다. 변경 내역·원본 및 수정 소스·의존성 고지는 XLS 빌드 과정에서 생성합니다. 소스 HTML과 변경 설명은 `src/Topdf/engines/ream`에 있습니다.
 
-LibreDWG는 별도 프로세스로 실행하지만 이것만으로 배포 의무가 사라지는 것으로 판단하지 않습니다. 공개 바이너리 배포 전 엔진 DLL·하위 의존성·대응 소스 및 글꼴 고지를 포함해 전체 패키지를 검토해야 합니다.
+LibreDWG와 함께 제공하는 DLL의 라이선스, 소스 및 Windows 빌드 레시피는 [DWG 재배포 안내](DWG-REDISTRIBUTION.md)에 정리했습니다. Microsoft 구성 요소의 조건은 [런타임 고지](MICROSOFT-RUNTIME-NOTICE.md)를 참고하세요.
 
 HWP 엔진은 고정된 rhwp 0.8.7 소스에 `src/Topdf/engines/rhwp/layout.patch`를 적용합니다. 원본 MIT 고지와 패치, 소스·패치·바이너리 SHA-256 정보를 엔진 폴더에 포함합니다. 변경 범위와 검증 한계는 `docs/HWP-LAYOUT-FIX.md`를 참고하세요.
 
