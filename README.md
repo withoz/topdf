@@ -2,21 +2,32 @@
 
 # TOPDF
 
-**모든 문서를 읽는 앱 — 현재 5가지 문서 형식 지원**
+**문서와 CAD 도면을 PDF로 변환하고 편집하는 Windows 앱**
 
 [![Windows build](https://github.com/withoz/topdf/actions/workflows/build.yml/badge.svg)](https://github.com/withoz/topdf/actions/workflows/build.yml)
 
-문서를 끌어놓으면 PDF로 변환해 앱 안에서 바로 보는 Windows 데스크톱 앱입니다. 현재는 **한글·워드·엑셀·DWG·DXF**를 지원하는 개발 버전이며, 모든 확장자나 원본과 완전히 동일한 출력을 보장하지 않습니다.
+문서를 끌어놓으면 PDF로 변환해 앱 안에서 열고 편집할 수 있습니다. 기존 PDF는 바로 엽니다.
 
-| 현재 지원하는 5가지 | 확장자 | 기본 변환 엔진 |
+## 설치
+
+Windows 10/11 x64용 **TOPDF 0.4.6 스마트판**을 GitHub에서 받을 수 있습니다. OCR과 로컬 AI 모델을 포함해 설치 파일 크기는 약 700MB입니다. [GitHub 릴리스](https://github.com/withoz/topdf/releases/tag/v0.4.6) · [스마트판 설치 파일](https://github.com/withoz/topdf/releases/download/v0.4.6/TOPDF-Setup-0.4.6-Smart-win-x64.exe)
+
+설치 파일에는 .NET과 Python 런타임이 포함됩니다. WebView2가 없는 PC에서는 최초 설치에 인터넷 연결이 필요합니다. [설치판 안내](docs/INSTALLER.md)
+
+## 지원 형식
+
+| 형식 | 확장자 | 처리 방식 |
 |---|---|---|
 | 한글 | HWP, HWPX | rhwp |
 | 워드 | DOCX | office2pdf |
 | 엑셀 | XLS, XLSX | 수정 Ream / MiniPdf |
+| 파워포인트 | PPTX | 내장 office2pdf |
+| 파워포인트 구형 형식 | PPT | 별도로 설치한 LibreOffice로 PDF 변환 |
 | DWG 도면 | DWG | LibreDWG → ezdxf |
 | DXF 도면 | DXF | ezdxf / matplotlib |
+| PDF | PDF | 변환 없이 열기·편집 |
 
-기존 PDF는 변환 없이 바로 볼 수 있습니다. HWPX는 변환 경로를 지원하며 다른 형식과 마찬가지로 폭넓은 실제 문서 검증이 더 필요합니다. DOC, PPT/PPTX, ODT 등은 현재 별도로 선택하는 설치형 호환 모드 대상입니다.
+PPTX는 기본 모드에서 열 수 있습니다. 구형 PPT를 열면 설치된 LibreOffice를 자동으로 사용합니다. DOC, ODT, ODS, ODP, RTF 등은 설치형 호환 모드에서 처리합니다.
 
 ## 주요 기능
 
@@ -31,9 +42,6 @@
 - 체크박스 선택 저장, 전체 선택·해제, 같은 이름 충돌 시 번호 추가
 - 탐색기 연결 프로그램 등록과 파일 열기 시 자동 변환
 - XLS 병합 셀 금액이 지나치게 작아지는 오류 보완
-- 기본 모드에서 한글·Microsoft Office·LibreOffice·AutoCAD·ODA 프로그램 호출 없음
-
-기본 모드도 .NET, WebView2 및 CAD용 Python 런타임은 필요합니다. 로컬 시험용 설치 파일 제작 스크립트를 제공합니다. .NET과 CAD용 Python을 포함하며, WebView2가 없는 PC에서는 최초 설치에 인터넷이 필요합니다. 바이너리 공개 릴리스 전 코드 서명·깨끗한 PC 검증·전체 라이선스 검토가 남아 있습니다. [설치판 안내](docs/INSTALLER.md)를 참고하세요.
 
 ## 빌드 및 실행
 
@@ -58,12 +66,12 @@ dotnet build src/Topdf/Topdf.csproj -o artifacts/app
 
 ## 사용법
 
-0.3.0의 새 기능은 상단 **스마트** 버튼에서 엽니다. [스마트 기능 사용법·검증·제한](docs/SMART-FEATURES.md)을 확인하세요. 로컬 AI 모델 포함으로 설치 파일 크기가 커졌습니다.
+스마트 기능은 상단 **스마트** 버튼에서 엽니다. [스마트 기능 사용법·검증·제한](docs/SMART-FEATURES.md)
 
-1. 왼쪽 위 **메뉴 → 파일 추가**로 파일을 선택하거나 창에 끌어놓습니다. 자동으로 변환하고 PDF는 바로 표시합니다.
-2. 상단 탭으로 문서를 바꾸고 ×로 닫습니다. 메뉴에서 완료된 파일을 클릭해도 PDF가 표시됩니다. 실패·취소된 문서는 **재시도**할 수 있습니다.
-3. 저장할 때는 메뉴를 열고 행을 체크한 뒤 **선택 저장**에서 폴더를 선택합니다. 체크박스 선택 중에는 메뉴를 유지합니다.
-4. 탐색기에서 쓰려면 메뉴의 **더보기 → 연결 프로그램 등록**을 누른 뒤 파일 우클릭 → 연결 프로그램 → TOPDF를 선택합니다.
+1. **파일 → 열기**(`Ctrl+O`)로 파일을 선택하거나 창에 끌어놓습니다. 변환할 파일을 추가하면 열린 파일 목록이 자동으로 표시됩니다.
+2. 상단 탭으로 문서를 전환합니다. **파일 → 열린 파일 목록**(`Ctrl+M`)에서 변환 결과를 확인하거나 실패·취소된 파일을 재시도할 수 있습니다.
+3. **파일 → PDF 내보내기**(`Ctrl+Shift+S`)로 편집 결과를 저장합니다. 여러 파일은 열린 파일 목록에서 체크한 뒤 **선택 저장**을 누릅니다.
+4. 탐색기에서 쓰려면 열린 파일 목록의 **더보기 → 연결 프로그램 등록**을 누른 뒤 파일을 우클릭해 **연결 프로그램 → TOPDF**를 선택합니다.
 
 `Ctrl+M`으로 메뉴를 열고 닫으며 `Esc`로 메뉴를 닫을 수 있습니다. `F11`은 화면 전체 보기/창 모드 전환입니다.
 
@@ -76,6 +84,7 @@ dotnet build src/Topdf/Topdf.csproj -o artifacts/app
 - CAD는 A3 가로 전체 맞춤의 **2D 미리보기**입니다. 정밀 축척, 3D, 전문 객체, XREF, CTB/STB는 별도 검증 대상입니다.
 - 일부 CAD 텍스트는 윤곽으로 출력되어 검색·복사가 불가능합니다.
 - 암호·손상·대용량 문서와 모든 문서 객체를 보장하지 않습니다.
+- PDF 편집은 200MB 이하, 500쪽 이하에서 지원합니다. 0.4.6 빌드에서 약 173MB PDF 두 개를 열어 글자를 추가하고 새 PDF로 저장하는 검증을 통과했습니다.
 - 임시 입력 복사본·PDF·엔진 로그와 WebView2 데이터는 `%LOCALAPPDATA%\TOPDF`에 남습니다. 자동 만료·앱 내 삭제는 후속 과제입니다.
 - XLSX 수식은 저장된 계산 결과를 표시하며, 계산 결과가 없으면 빈 금액 출력 대신 변환을 중단합니다. 자체 수식 재계산은 지원하지 않습니다.
 - 한글 렌더링에는 Windows 글꼴을 사용합니다. 이 저장소는 독점 글꼴을 포함하지 않습니다.
