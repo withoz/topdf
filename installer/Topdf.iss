@@ -55,6 +55,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "바탕 화면 바로가기 만들기"; Flags: unchecked
 Name: "associations"; Description: "연결 프로그램 목록에 TOPDF 추가 (기본 앱 유지)"; Flags: unchecked
+#ifdef NasApproval
+[InstallDelete]
+Type: files; Name: "{app}\engines\document_tools.py"
+Type: files; Name: "{app}\engines\__pycache__\document_tools.*.pyc"
+Type: filesandordirs; Name: "{app}\engines\vendor\llama"
+Type: filesandordirs; Name: "{app}\engines\vendor\tesseract"
+#endif
 [Files]
 Source: "{#PackageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#Bootstrapper}"; DestDir: "{tmp}"; Flags: deleteafterinstall

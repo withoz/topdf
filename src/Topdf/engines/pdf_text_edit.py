@@ -6,18 +6,18 @@ import hashlib
 import io
 import math
 import pypdfium2 as pdfium
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfWriter
 from pypdf.generic import ContentStream, DictionaryObject, NameObject, FloatObject
 
 
-def editable_page(path,index):
+def editable_page(reader,index):
     """Expand ordinary Form XObjects, retaining their matrix and BBox clipping.
 
     PDFium's bundled version cannot reliably serialize nested form edits. Work
     on isolated, expanded page content so all removals use its page-object API.
     Transparency groups retain their special compositing semantics: refuse them.
     """
-    reader=PdfReader(path);writer=PdfWriter();writer.append(reader,pages=[index],import_outline=False)
+    writer=PdfWriter();writer.append(reader,pages=[index],import_outline=False)
     page=writer.pages[0];resources=DictionaryObject();serial=0;op_count=0
     categories=('/Font','/XObject','/ExtGState','/ColorSpace','/Pattern','/Shading','/Properties')
     def expand(stream,local,depth=0):
@@ -166,19 +166,18 @@ def groups(page, pdf_page, geometry, include_invisible=False):
     return output
 
 
-def text_layer(path,index,geometry,include_invisible=False):
-    reader=PdfReader(path)
-    try: source=editable_page(path,index)
+def text_layer(reader,index,geometry,include_invisible=False):
+    try: source=editable_page(reader,index)
     except ValueError:return []
     with pdfium.PdfDocument(source) as document:
         with closing(document[0]) as page:
             return [{k:v for k,v in g.items() if not k.startswith('_')} for g in groups(page,reader.pages[index],geometry,include_invisible)]
 
 
-def cleaned_page(path,index,elements,geometry,rotation=0):
+def cleaned_page(reader,index,elements,geometry,rotation=0):
     replacements=[e for e in elements if e['kind']=='replace']
     if not replacements:return None
-    reader=PdfReader(path);source=editable_page(path,index)
+    source=editable_page(reader,index)
     with pdfium.PdfDocument(source) as document:
         with closing(document[0]) as page:
             with closing(page.get_textpage()) as text:expected=Counter(c for c in text.get_text_range() if not c.isspace())

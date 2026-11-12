@@ -12,7 +12,14 @@ public partial class MainWindow
     async void EditPdf(object sender,RoutedEventArgs e)
     {
         if(pdfEditor==null && SelectedJob is {Pdf:not null} job)await StartPdfEditorAsync(job.Pdf,job.Name);
-        if(pdfEditor!=null){await pdfEditor.Ready;pdfEditor.EnterEditing();}
+        if(pdfEditor is not {} editor)return;
+        try {
+            await editor.Ready;
+            if(ReferenceEquals(pdfEditor,editor))editor.EnterEditing();
+        } catch(OperationCanceledException) {}
+        catch(Exception ex) {
+            if(ReferenceEquals(pdfEditor,editor))Summary.Text="PDF 편집 준비 실패: "+ex.Message;
+        }
     }
     static string? EditorPath(FileJob? job)=>job!=null&&Path.GetExtension(job.Source).Equals(".topdf",StringComparison.OrdinalIgnoreCase)?job.Source:job?.Pdf;
     bool CanChangeDocument(FileJob? next)

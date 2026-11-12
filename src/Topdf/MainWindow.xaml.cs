@@ -77,6 +77,13 @@ public partial class MainWindow : Window
         SetMenuOpen(Files.SelectedItem is not FileJob { Pdf: not null });
     }
     public void SetMenuOpen(bool open) => MenuToggle.IsChecked = open;
+    void DismissActionMenuOnWindowClick(object sender, MouseButtonEventArgs e)
+    {
+        if (ActionMenu.IsOpen && e.OriginalSource is DependencyObject source &&
+            ActionMenu.Child?.IsAncestorOf(source) != true)
+            SetMenuOpen(false);
+    }
+
     void OpenMenu(object sender, RoutedEventArgs e) => SetMenuOpen(true);
     void CloseMenu(object sender, RoutedEventArgs e) => SetMenuOpen(false);
     void HandleShortcuts(object sender, KeyEventArgs e)

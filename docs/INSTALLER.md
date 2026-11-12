@@ -1,6 +1,12 @@
 # 설치 파일 제작과 검증
 
-0.3.10은 Windows 10/11 x64용 **로컬 시험 설치판**입니다. 공개 GitHub에는 설치 스크립트와 앱 소스를 올리며 바이너리 공개 릴리스는 아직 게시하지 않습니다.
+업데이트나 수정 사항을 배포할 때는 같은 소스와 버전 번호로 Windows x64 설치판 세 가지를 모두 빌드합니다. 설치 파일과 SHA-256 목록은 `artifacts/TOPDF-<버전>-Installers`에 모읍니다.
+
+- **NAS 승인판**은 사내 승인과 앱 내 업데이트를 지원합니다. 운영 NAS의 주소와 인증서 지문은 빌드 설정으로 전달합니다.
+- **일반판**은 NAS 승인 없이 실행되며 스마트 기능을 포함하지 않습니다.
+- **스마트판**은 NAS 승인 없이 실행되며 OCR과 로컬 AI를 포함합니다.
+
+운영 NAS에는 NAS 승인판을 게시합니다. GitHub 릴리스에는 스마트판 설치 파일을 게시합니다.
 
 ## 포함 내용
 
@@ -14,7 +20,7 @@ WebView2가 없는 PC에서는 Microsoft의 서명된 Evergreen 설치 도우미
 
 설치는 관리자 권한을 요구하지 않는 사용자별 방식입니다. [Inno Setup 권한 설명](https://jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm)을 참고하세요.
 
-## 재현 빌드
+## 단일 시험 설치판 빌드
 
 Windows x64의 .NET 10 SDK, Git, Python 3.14 x64/pip, Node.js와 공식 Inno Setup 7 컴파일러가 필요합니다.
 
@@ -25,7 +31,7 @@ Windows x64의 .NET 10 SDK, Git, Python 3.14 x64/pip, Node.js와 공식 Inno Set
 ./scripts/Build-Installer.ps1 -Compiler 'C:\path\to\ISCC.exe' -Bootstrapper 'C:\path\to\MicrosoftEdgeWebview2Setup.exe'
 ```
 
-공식 [WebView2 배포 페이지](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution)에서 bootstrapper를 받아 Authenticode 서명을 확인하세요. Python 출력 폴더가 이미 있으면 재사용하거나 다른 `-Output`을 지정하세요. 빌드의 `-PythonRuntime`은 준비된 내장 Python 루트를 받습니다. 생성 위치는 `artifacts/installer/TOPDF-Setup-0.3.10-win-x64-preview.exe`입니다. 고유한 staging 폴더를 사용하고 고객 문서·캐시·변환 결과를 제외합니다.
+공식 WebView2 배포 페이지에서 bootstrapper를 받아 Authenticode 서명을 확인하세요. Python 출력 폴더가 이미 있으면 재사용하거나 다른 `-Output`을 지정하세요. 빌드의 `-PythonRuntime`은 준비된 내장 Python 루트를 받습니다. 시험 설치 파일은 `artifacts/installer`에 생성됩니다. [WebView2 배포 페이지](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution)
 
 ## 데이터와 제거
 

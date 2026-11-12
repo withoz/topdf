@@ -146,11 +146,14 @@ public partial class PdfEditorView : UserControl
             var imageTask=renders.TryGetValue(key,out var cachedImage)
                 ? Task.FromResult(cachedImage)
                 : PdfEditService.RenderAsync(snapshot,work,page.SourceIndex,page.Rotation,token,plan);
-            await Task.WhenAll(textTask,imageTask);
+            try { await Task.WhenAll(textTask,imageTask); }
+            catch (Exception) when (textTask.IsFaulted && imageTask.IsCompletedSuccessfully && !token.IsCancellationRequested) {
+                // A text worker failure must not prevent the page image from opening.
+            }
             if(version!=renderVersion||token.IsCancellationRequested)return;
             var image=await imageTask;
             renders[key]=image;
-            sourceTexts[page.SourceIndex]=await textTask;
+            if(textTask.IsCompletedSuccessfully)sourceTexts[page.SourceIndex]=textTask.Result;
             var bitmap=LoadImage(image);
             if(refreshInPlace && inlineText!=null){
                 UpdateInlineBasePage(bitmap);
@@ -163,7 +166,10 @@ public partial class PdfEditorView : UserControl
                 EditCanvas.Width = size.W; EditCanvas.Height = size.H;
                 DrawElements(); ApplyZoom(); EditSurface.Visibility = Visibility.Visible; EditCanvas.IsEnabled = !saving;
             }
-            EditStatus.Text = sourceTexts[page.SourceIndex].Length == 0 ? $"{EditPages.SelectedIndex+1}/{plan.Pages.Count}쪽 · 선택 가능한 본문이 없습니다. 스캔·윤곽선·특수 PDF 구조는 OCR 또는 원본 수정이 필요합니다." : $"{EditPages.SelectedIndex+1}/{plan.Pages.Count}쪽 · 본문 클릭 → 직접 입력 → Enter 적용";
+            var pageLabel=$"{EditPages.SelectedIndex+1}/{plan.Pages.Count}쪽";
+            EditStatus.Text = !textTask.IsCompletedSuccessfully ? $"{pageLabel} · 본문을 읽지 못했습니다. 페이지 보기와 주석은 사용할 수 있습니다."
+                : textTask.Result.Length == 0 ? $"{pageLabel} · 선택 가능한 본문이 없습니다. 스캔·윤곽선·특수 PDF 구조는 OCR 또는 원본 수정이 필요합니다."
+                : $"{pageLabel} · 본문 클릭 → 직접 입력 → Enter 적용";
         } catch (OperationCanceledException) { }
         catch (Exception ex) { if (version == renderVersion){EditStatus.Visibility=Visibility.Visible;EditStatus.Text=ex.Message;EditSurface.Visibility=Visibility.Visible;EditCanvas.IsEnabled=!saving;} }
     }

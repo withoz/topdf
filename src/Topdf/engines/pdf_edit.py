@@ -10,18 +10,22 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from pypdf import PdfReader, PdfWriter, Transformation
+from pypdf import PdfReader, PdfWriter, Transformation, filters
+from pypdf.errors import LimitReachedError
 from pypdf.generic import NameObject, DictionaryObject, ArrayObject, DecodedStreamObject
 import pypdfium2 as pdfium
+
+
+MAX_EDIT_SOURCE_BYTES = 200_000_000
 
 
 def source_hash(path):
     with path.open('rb') as stream: return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def open_source(path):
-    if path.stat().st_size > 200_000_000: raise ValueError('편집은 200MB 이하 PDF를 지원합니다.')
-    reader = PdfReader(path)
+def open_source(path, stream):
+    if path.stat().st_size > MAX_EDIT_SOURCE_BYTES: raise ValueError('편집은 200MB 이하 PDF를 지원합니다.')
+    reader = PdfReader(stream)
     if reader.is_encrypted: raise ValueError('암호 PDF 편집은 아직 지원하지 않습니다.')
     if not 1 <= len(reader.pages) <= 500: raise ValueError('편집은 1~500쪽 PDF를 지원합니다.')
     root = reader.trailer['/Root']
@@ -53,12 +57,17 @@ def geometry(page, extra_rotation=0):
 
 
 def inspect(path):
-    reader = open_source(path)
-    return dict(sourceSha256=source_hash(path), pages=[dict(sourceIndex=i, width=geometry(page)[0], height=geometry(page)[1]) for i, page in enumerate(reader.pages)])
+    with path.open('rb') as stream:
+        reader = open_source(path, stream)
+        return dict(sourceSha256=source_hash(path), pages=[dict(sourceIndex=i, width=geometry(page)[0], height=geometry(page)[1]) for i, page in enumerate(reader.pages)])
 
 
 def render(path, index, rotation, target, plan_path=None, max_size=1800):
-    reader = open_source(path)
+    with path.open('rb') as stream:
+        render_page(path, open_source(path, stream), index, rotation, target, plan_path, max_size)
+
+
+def render_page(path, reader, index, rotation, target, plan_path, max_size):
     if not 0 <= index < len(reader.pages) or rotation not in (0, 90, 180, 270): raise ValueError('잘못된 페이지 또는 회전입니다.')
     if target.exists(): raise ValueError('새 미리보기 파일을 지정하세요.')
     cleaned = None
@@ -68,7 +77,7 @@ def render(path, index, rotation, target, plan_path=None, max_size=1800):
         specification = next((p for p in plan['pages'] if p['sourceIndex'] == index), None)
         if specification:
             from pdf_text_edit import cleaned_page
-            cleaned = cleaned_page(path, index, specification.get('elements', []), geometry, rotation)
+            cleaned = cleaned_page(reader, index, specification.get('elements', []), geometry, rotation)
     with pdfium.PdfDocument(cleaned if cleaned else str(path)) as document:
         page = document[0 if cleaned else index]
         scale = min(6 if max_size>1800 else 2, max(160,min(3600,max_size))/max(page.get_size()))
@@ -172,6 +181,19 @@ def draw_element(canvas, element, width, height, font):
 
 
 def export(path, plan_path, target):
+    declared_stream_limit = filters.MAX_DECLARED_STREAM_LENGTH
+    try:
+        # Export copies encoded image streams. Keep all decompression limits intact.
+        filters.MAX_DECLARED_STREAM_LENGTH = max(declared_stream_limit, MAX_EDIT_SOURCE_BYTES)
+        with path.open('rb') as stream:
+            export_pages(path, open_source(path, stream), plan_path, target)
+    except LimitReachedError as exc:
+        raise ValueError('PDF 내부 데이터가 처리 한도를 초과했습니다. 편집 파일(.topdf)로 작업을 저장할 수 있습니다.') from exc
+    finally:
+        filters.MAX_DECLARED_STREAM_LENGTH = declared_stream_limit
+
+
+def export_pages(path, reader, plan_path, target):
     from reportlab.pdfgen.canvas import Canvas
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
@@ -179,7 +201,6 @@ def export(path, plan_path, target):
     if target.exists() or target.resolve() == path.resolve(): raise ValueError('기존 파일을 덮어쓸 수 없습니다.')
     if plan_path.stat().st_size > 10_000_000: raise ValueError('편집 계획 크기 한도 초과')
     plan = json.loads(plan_path.read_text(encoding='utf-8-sig'))
-    reader = open_source(path)
     if plan.get('sourceSha256') != source_hash(path): raise ValueError('편집용 PDF가 변경됐습니다. 다시 열어 주세요.')
     pages = plan.get('pages', [])
     indices = [int(p['sourceIndex']) for p in pages]
@@ -201,7 +222,7 @@ def export(path, plan_path, target):
         if rotation not in (0, 90, 180, 270): raise ValueError('잘못된 페이지 회전입니다.')
         page = writer.pages[position]
         from pdf_text_edit import cleaned_page
-        cleaned = cleaned_page(path, specification['sourceIndex'], specification.get('elements', []), geometry, rotation)
+        cleaned = cleaned_page(reader, specification['sourceIndex'], specification.get('elements', []), geometry, rotation)
         if cleaned:
             replacement_reader = PdfReader(cleaned); overlays.append(replacement_reader)
             replacement_page = replacement_reader.pages[0]
@@ -240,21 +261,24 @@ def export(path, plan_path, target):
     if reader.metadata: writer.add_metadata({str(k): str(v) for k, v in reader.metadata.items() if v is not None})
     writer.add_metadata({'/Producer': 'TOPDF PDF Editor'})
     with target.open('xb') as output: writer.write(output)
-    check = PdfReader(target)
-    if len(check.pages) != len(pages): raise ValueError('저장된 PDF 페이지 수가 다릅니다.')
+    with target.open('rb') as stream:
+        if len(PdfReader(stream).pages) != len(pages): raise ValueError('저장된 PDF 페이지 수가 다릅니다.')
 
 
 def append_pages(source, extra, target):
     if extra is None:
         raise ValueError('삽입할 PDF가 필요합니다.')
-    original, added = open_source(source), open_source(extra)
-    if len(original.pages) + len(added.pages) > 500:
-        raise ValueError('삽입 후 원본 페이지 수는 500쪽 이하여야 합니다.')
-    writer = PdfWriter(clone_from=original)
-    writer.append(added, import_outline=False)
-    with target.open('xb') as output:
-        writer.write(output)
-    open_source(target)
+    with source.open('rb') as original_stream, extra.open('rb') as added_stream:
+        original = open_source(source, original_stream)
+        added = open_source(extra, added_stream)
+        if len(original.pages) + len(added.pages) > 500:
+            raise ValueError('삽입 후 원본 페이지 수는 500쪽 이하여야 합니다.')
+        writer = PdfWriter(clone_from=original)
+        writer.append(added, import_outline=False)
+        with target.open('xb') as output:
+            writer.write(output)
+    with target.open('rb') as output:
+        open_source(target, output)
 
 
 def main():
@@ -269,9 +293,11 @@ def main():
     args = parser.parse_args()
     if args.operation == 'inspect': args.output.write_text(json.dumps(inspect(args.source), ensure_ascii=False), encoding='utf-8')
     elif args.operation == 'text':
-        open_source(args.source)
         from pdf_text_edit import text_layer
-        args.output.write_text(json.dumps(text_layer(args.source, args.page, geometry, args.include_invisible), ensure_ascii=False), encoding='utf-8')
+        with args.source.open('rb') as stream:
+            reader = open_source(args.source, stream)
+            text = text_layer(reader, args.page, geometry, args.include_invisible)
+        args.output.write_text(json.dumps(text, ensure_ascii=False), encoding='utf-8')
     elif args.operation == 'render': render(args.source, args.page, args.rotation, args.output, args.plan, args.max_size)
     elif args.operation == 'append': append_pages(args.source, args.append, args.output)
     else: export(args.source, args.plan, args.output)
