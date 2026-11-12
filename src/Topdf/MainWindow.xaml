@@ -1,4 +1,4 @@
-﻿<Window x:Class="Topdf.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:wv="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf" Title="TOPDF · PDF 편집기" Icon="Assets/topdf-logo.png" Width="1280" Height="800" MinWidth="720" MinHeight="480" AllowDrop="True" Drop="FilesDropped" PreviewKeyDown="HandleShortcuts" PreviewMouseDown="DismissActionMenuOnWindowClick" Background="#EDF1F5">
+<Window x:Class="Topdf.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:wv="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf" Title="TOPDF · PDF 편집기" Icon="Assets/topdf-logo.png" Width="1280" Height="800" MinWidth="720" MinHeight="480" AllowDrop="True" Drop="FilesDropped" PreviewKeyDown="HandleShortcuts" PreviewMouseDown="DismissActionMenuOnWindowClick" Background="#EDF1F5">
  <Window.Resources>
   <DataTemplate x:Key="SmartEvidenceTemplate"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" Margin="2,5"/></DataTemplate>
   <Style x:Key="SmartEvidenceItem" TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
@@ -22,6 +22,11 @@
       <MenuItem Header="복구 파일 열기…" Click="OpenRecovery"/>
       <Separator/>
       <MenuItem x:Name="MenuSaveProject" Header="편집 파일 저장…" InputGestureText="Ctrl+S" Command="ApplicationCommands.Save"/>
+      <MenuItem x:Name="MenuExportOther" Header="다른 형식으로 내보내기">
+       <MenuItem Header="Word 문서 (DOCX)…" Tag="docx" Click="ExportOtherFormat"/>
+       <MenuItem Header="PNG 이미지…" Tag="png" Click="ExportOtherFormat"/>
+       <MenuItem Header="JPEG 이미지…" Tag="jpg" Click="ExportOtherFormat"/>
+      </MenuItem>
       <MenuItem x:Name="MenuExportPdf" Header="PDF 내보내기…" InputGestureText="Ctrl+Shift+S" Command="ApplicationCommands.SaveAs"/>
       <MenuItem x:Name="MenuCloseTab" Header="문서 닫기" InputGestureText="Ctrl+W" Click="CloseSelectedDocument"/>
       <Separator/>
@@ -44,6 +49,7 @@
      <MenuItem Header="보기(_V)" SubmenuOpened="ViewMenuOpened">
       <MenuItem Header="목차" Tag="outline" Click="ViewMenuAction"/>
       <MenuItem Header="객체 특성창" Tag="properties" IsCheckable="True" Click="ViewMenuAction"/>
+      <MenuItem Header="PDF 메모" Tag="notes" Click="ViewMenuAction"/>
       <MenuItem Header="한 페이지" Tag="1" Click="ViewMenuAction"/>
       <MenuItem Header="두 페이지" Tag="2" Click="ViewMenuAction"/>
       <MenuItem Header="세 페이지" Tag="3" Click="ViewMenuAction"/>

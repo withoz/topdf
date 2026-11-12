@@ -84,7 +84,8 @@ internal static class UnifiedUiTest
                     });
                     scroll.ScrollToVerticalOffset(scroll.ScrollableHeight);editWindow.UpdateLayout();
                     Wheel(-120);
-                    await Until(()=>wheelPages.SelectedIndex==2&&image.IsVisible);
+                    var wheelNavigating=typeof(PdfEditorView).GetField("pageWheelNavigating",BindingFlags.Instance|BindingFlags.NonPublic)!;
+                    await Until(()=>wheelPages.SelectedIndex==2&&image.IsVisible&&wheelNavigating.GetValue(shared) is false);
                     Check(scroll.VerticalOffset<1,"Forward wheel opens next page at top");
                     Wheel(120);
                     await Until(()=>wheelPages.SelectedIndex==1&&image.IsVisible);

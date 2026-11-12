@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 
@@ -6,7 +6,8 @@ namespace Topdf;
 
 public static class IndependentConversion
 {
-    public static bool Supports(string path) => Path.GetExtension(path).ToLowerInvariant() is ".hwp" or ".hwpx" or ".docx" or ".pptx" or ".xls" or ".xlsx" or ".dwg" or ".dxf" or ".pdf";
+    public static bool Supports(string path) => Path.GetExtension(path).ToLowerInvariant() is ".hwp" or ".hwpx" or ".docx" or ".pptx" or ".xls" or ".xlsx" or ".dwg" or ".dxf" or ".pdf" || IsImage(path);
+    public static bool IsImage(string path) => Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg";
     public static string EngineName(string path) => Path.GetExtension(path).ToLowerInvariant() switch {
         ".hwp" or ".hwpx" => "rhwp 0.8.7 · 머리글·꼬리글 보정",
         ".docx" or ".pptx" => "office2pdf 0.10.0",
@@ -14,6 +15,7 @@ public static class IndependentConversion
         ".xls" => "Ream 1.33.1 · 병합 셀 보정",
         ".dwg" => "LibreDWG 0.14 + ezdxf",
         ".dxf" => "ezdxf / matplotlib",
+        ".png" or ".jpg" or ".jpeg" => "이미지 · TOPDF",
         ".pdf" => "PDF 바로 보기",
         _ => "독립 변환 검증 보류 · 호환 모드 필요"
     };
@@ -46,6 +48,10 @@ public static class IndependentConversion
                 executable = Path.ChangeExtension(typeof(App).Assembly.Location, ".exe");
                 arguments = ["--convert-xls", input, pdf];
                 break;
+            case ".png": case ".jpg": case ".jpeg":
+                executable = AppPaths.Python;
+                arguments = [Path.Combine(AppContext.BaseDirectory, "engines", "format_export.py"), "image-to-pdf", input, pdf];
+                break;
             case ".dwg": case ".dxf":
                 executable = AppPaths.Python;
                 var worker = Path.Combine(AppContext.BaseDirectory, "engines", "convert.py");
@@ -54,7 +60,7 @@ public static class IndependentConversion
             default: return input;
         }
         var log = Path.Combine(job, "engine.log");
-        var info = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = job };
+        var info = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, WorkingDirectory = job };
         info.Environment["PYTHONUTF8"] = "1";
         foreach (var arg in arguments) info.ArgumentList.Add(arg);
         using var process = Process.Start(info) ?? throw new InvalidOperationException("독립 변환 엔진을 실행하지 못했습니다.");

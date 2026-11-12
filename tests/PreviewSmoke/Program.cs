@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Web.WebView2.Wpf;
@@ -12,7 +12,11 @@ internal static class Program
         Environment.SetEnvironmentVariable("TOPDF_DATA_DIR", Path.Combine(AppContext.BaseDirectory, "test-data"));
         if(args.Length==2 && args[0]=="--context-text-ui") return ContextTextUiTest.Run(args[1]);
         if(args.Length==2 && args[0]=="--commands-ui") return CommandsUiTest.Run(args[1]);
+        if(args.Length==3 && args[0]=="--cad-zoom-timing") return CadZoomTiming.Run(Path.GetFullPath(args[1]), Path.GetFullPath(args[2]));
+        if(args.Length==2 && args[0]=="--mouse-navigation-ui") return MouseNavigationUiTest.Run(Path.GetFullPath(args[1]));
+        if(args.Length==2 && args[0]=="--viewport-zoom-ui") return ViewportZoomUiTest.Run(Path.GetFullPath(args[1]));
         if(args.Length==2 && args[0]=="--zoom-ui") return ZoomUiTest.Run(args[1]);
+        if(args.Length==2 && args[0]=="--spread-scroll-ui") return ZoomUiTest.RunSpreadScroll(args[1]);
         if(args.Length==2 && args[0]=="--font-views-ui") return FontViewsUiTest.Run(args[1]);
         if(args.Length==2 && args[0]=="--unified-ui") return UnifiedUiTest.Run(args[1]);
         if(args.Length==2 && args[0]=="--drawing-ui") return DrawingUiTest.Run(args[1]);
@@ -21,6 +25,7 @@ internal static class Program
         if(args.Length==2 && args[0]=="--smart-ui") return SmartUiTest.Run(args[1]);
         if(args.Length==3 && args[0]=="--auto-folder") return AutoOpenTest.Run(args[1], args[2]);
         if(args.Length==2 && args[0]=="--shell-open") return ShellOpenTest.Run(Path.GetFullPath(args[1]));
+        if(args.Length==2 && args[0]=="--format-roundtrip-ui") return FormatRoundTripUiTest.Run(Path.GetFullPath(args[1]));
         if(args.Length==1 && args[0]=="--export-ui") return ExportUiTest.Run();
         if (args.Length == 3 && args[0] == "--folder") return FolderTest.Run(Path.GetFullPath(args[1]), Path.GetFullPath(args[2]));
         if (args.Length != 1 || !File.Exists(args[0])) { Console.Error.WriteLine("Pass an existing PDF path."); return 2; }

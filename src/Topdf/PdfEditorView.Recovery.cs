@@ -18,6 +18,7 @@ public partial class PdfEditorView
     void SetDirty(bool value)
     {
         editRevision++;
+        if(PdfNotesPane.Visibility==Visibility.Visible)RefreshPdfNotes();
         if(dirty!=value){dirty=value;EditStateChanged?.Invoke(this,EventArgs.Empty);}
         if(!value){StopRecovery();return;}
         if(recoveryFile!=null)return;

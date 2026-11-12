@@ -1,4 +1,4 @@
-﻿"""Snapshot-based PDF overlay editing. Includes PDFium text-object replacement."""
+"""Snapshot-based PDF overlay editing. Includes PDFium text-object replacement."""
 import argparse
 import hashlib
 import io
@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pypdf import PdfReader, PdfWriter, Transformation, filters
 from pypdf.errors import LimitReachedError
-from pypdf.generic import NameObject, DictionaryObject, ArrayObject, DecodedStreamObject
+from pypdf.generic import NameObject, DictionaryObject, ArrayObject, DecodedStreamObject, NumberObject
+from pypdf.annotations import Text
 import pypdfium2 as pdfium
 
 
@@ -59,15 +60,31 @@ def geometry(page, extra_rotation=0):
 def inspect(path):
     with path.open('rb') as stream:
         reader = open_source(path, stream)
-        return dict(sourceSha256=source_hash(path), pages=[dict(sourceIndex=i, width=geometry(page)[0], height=geometry(page)[1]) for i, page in enumerate(reader.pages)])
+        pages = []
+        for index, page in enumerate(reader.pages):
+            width, height, _ = geometry(page)
+            notes = []
+            annotations = page.annotations
+            for reference in annotations if isinstance(annotations, ArrayObject) else ():
+                try:
+                    annotation = reference.get_object()
+                    if annotation.get('/Subtype') not in ('/Text', '/FreeText', '/Highlight', '/Underline', '/StrikeOut', '/Squiggly'):
+                        continue
+                    contents = annotation.get('/Contents')
+                    if isinstance(contents, str) and contents.strip():
+                        notes.append(dict(text=contents.strip(), author=str(annotation.get('/T', ''))))
+                except (AttributeError, KeyError, TypeError, ValueError):
+                    continue
+            pages.append(dict(sourceIndex=index, width=width, height=height, notes=notes))
+        return dict(sourceSha256=source_hash(path), pages=pages)
 
 
-def render(path, index, rotation, target, plan_path=None, max_size=1800):
+def render(path, index, rotation, target, plan_path=None, max_size=1800, region=None):
     with path.open('rb') as stream:
-        render_page(path, open_source(path, stream), index, rotation, target, plan_path, max_size)
+        render_page(path, open_source(path, stream), index, rotation, target, plan_path, max_size, region)
 
 
-def render_page(path, reader, index, rotation, target, plan_path, max_size):
+def render_page(path, reader, index, rotation, target, plan_path, max_size, region=None):
     if not 0 <= index < len(reader.pages) or rotation not in (0, 90, 180, 270): raise ValueError('잘못된 페이지 또는 회전입니다.')
     if target.exists(): raise ValueError('새 미리보기 파일을 지정하세요.')
     cleaned = None
@@ -80,9 +97,13 @@ def render_page(path, reader, index, rotation, target, plan_path, max_size):
             cleaned = cleaned_page(reader, index, specification.get('elements', []), geometry, rotation)
     with pdfium.PdfDocument(cleaned if cleaned else str(path)) as document:
         page = document[0 if cleaned else index]
-        scale = min(6 if max_size>1800 else 2, max(160,min(3600,max_size))/max(page.get_size()))
-        bitmap = page.render(scale=scale, rotation=rotation)
-        if cleaned:
+        scale = min(8, max(160, min(4200, max_size)) / max(page.get_size()))
+        if region:
+            from pdf_viewport import render_bitmap
+            bitmap = render_bitmap(page, rotation, region)
+        else:
+            bitmap = page.render(scale=scale, rotation=rotation)
+        if cleaned and not region:
             from pdf_text_edit import groups
             layouts=[{k:v for k,v in g.items() if not k.startswith('_')} for g in groups(page,reader.pages[index],geometry)]
             target.with_suffix('.carets.json').write_text(json.dumps(layouts,ensure_ascii=False),encoding='utf-8')
@@ -170,6 +191,26 @@ def draw_element(canvas, element, width, height, font):
             if kind == 'note':
                 canvas.setFillColor(colors.HexColor('#FFF3AF')); canvas.setStrokeColor(colors.HexColor('#D6BB55'))
                 canvas.roundRect(0, 0, w, h, 4, fill=1, stroke=1)
+            elif kind == 'text':
+                fill = element.get('textBoxFill', 'none')
+                border = element.get('textBoxBorderColor', 'none')
+                if any(value != 'none' and (not isinstance(value, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', value)) for value in (fill, border)):
+                    raise ValueError('잘못된 글상자 색상입니다.')
+                if fill != 'none':
+                    opacity = scalar(element.get('fillOpacity', 1))
+                    if not 0 <= opacity <= 1: raise ValueError('잘못된 글상자 채움 불투명도입니다.')
+                    canvas.saveState()
+                    canvas.setFillColor(colors.HexColor(fill))
+                    canvas.setFillAlpha(opacity)
+                    canvas.rect(0, 0, w, h, fill=1, stroke=0)
+                    canvas.restoreState()
+                if border != 'none':
+                    stroke = scalar(element.get('textBoxBorderWidth', 1))
+                    if not .5 <= stroke <= 8: raise ValueError('잘못된 글상자 테두리 두께입니다.')
+                    stroke = min(stroke, w, h)
+                    canvas.setStrokeColor(colors.HexColor(border))
+                    canvas.setLineWidth(stroke)
+                    canvas.rect(stroke/2, stroke/2, w-stroke, h-stroke, fill=0, stroke=1)
             selected_font = {'Malgun Gothic': font, 'Gulim': 'TOPDF-Gulim', 'Batang': 'TOPDF-Batang'}.get(element.get('fontFamily', 'Malgun Gothic'), font)
             style = ParagraphStyle('TOPDF', alignment={'left':0,'center':1,'right':2}.get(element.get('alignment','left'),0), fontName=selected_font, fontSize=size, leading=size*1.35, textColor=colors.HexColor(color), wordWrap='CJK')
             paragraph = Paragraph(escape(text).replace('\n', '<br/>'), style)
@@ -253,7 +294,14 @@ def export_pages(path, reader, plan_path, target):
                 else: resources[key] = value
             page[NameObject('/Resources')] = resources
             stream = io.BytesIO(); canvas = Canvas(stream, pagesize=(width, height), pageCompression=1)
-            for element in elements: draw_element(canvas, element, width, height, font)
+            for element in elements:
+                draw_element(canvas, element, width, height, font)
+                if element['kind'] == 'note':
+                    x, y = Transformation(matrix).apply_on((scalar(element['x']), height-scalar(element['y'])))
+                    annotation = Text(rect=(x, y, x, y), text=element['text'])
+                    # The page already contains the note's appearance. Keep the comment without a second icon.
+                    annotation[NameObject('/F')] = NumberObject(32)
+                    writer.add_annotation(position, annotation)
             canvas.save(); stream.seek(0)
             overlays.append(PdfReader(stream))
             overlay = overlays[-1].pages[0]
@@ -289,6 +337,7 @@ def main():
     parser.add_argument('--plan', type=Path)
     parser.add_argument('--append', type=Path)
     parser.add_argument('--include-invisible', action='store_true')
+    parser.add_argument('--region', nargs=5, type=float)
     parser.add_argument('--max-size',type=int,default=1800)
     args = parser.parse_args()
     if args.operation == 'inspect': args.output.write_text(json.dumps(inspect(args.source), ensure_ascii=False), encoding='utf-8')
@@ -298,7 +347,7 @@ def main():
             reader = open_source(args.source, stream)
             text = text_layer(reader, args.page, geometry, args.include_invisible)
         args.output.write_text(json.dumps(text, ensure_ascii=False), encoding='utf-8')
-    elif args.operation == 'render': render(args.source, args.page, args.rotation, args.output, args.plan, args.max_size)
+    elif args.operation == 'render': render(args.source, args.page, args.rotation, args.output, args.plan, args.max_size, args.region)
     elif args.operation == 'append': append_pages(args.source, args.append, args.output)
     else: export(args.source, args.plan, args.output)
 

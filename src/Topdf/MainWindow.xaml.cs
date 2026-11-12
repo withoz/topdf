@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -166,6 +166,7 @@ public partial class MainWindow : Window
     {
         var groups = new List<(string Label,string Pattern)> {
             ("PDF 문서 (*.pdf)", "*.pdf"),
+            ("이미지 (*.png; *.jpg; *.jpeg)", "*.png;*.jpg;*.jpeg"),
             ("한글 문서 (*.hwp; *.hwpx)", "*.hwp;*.hwpx"),
             ("Word 문서 (*.docx)", "*.docx"),
             ("Excel 통합 문서 (*.xls; *.xlsx)", "*.xls;*.xlsx"),
@@ -277,7 +278,7 @@ public partial class MainWindow : Window
         finally { requestedConversions.Clear(); active.Dispose(); active = null; CompatibilityMode.IsEnabled = true; }
     }
     static bool IsLegacyPowerPoint(string path) => Path.GetExtension(path).Equals(".ppt", StringComparison.OrdinalIgnoreCase);
-    string EngineLabel(string path) => IsLegacyPowerPoint(path) ? "LibreOffice · PPT" : CompatibilityMode.IsChecked == true && Path.GetExtension(path).ToLowerInvariant() is not ".pdf" and not ".dxf" ? "설치형 호환 엔진" : IndependentConversion.EngineName(path);
+    string EngineLabel(string path) => IsLegacyPowerPoint(path) ? "LibreOffice · PPT" : CompatibilityMode.IsChecked == true && !IndependentConversion.IsImage(path) && Path.GetExtension(path).ToLowerInvariant() is not ".pdf" and not ".dxf" ? "설치형 호환 엔진" : IndependentConversion.EngineName(path);
     void ModeChanged(object sender, RoutedEventArgs e)
     {
         if (Files == null || Summary == null) return;

@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -40,14 +40,16 @@ public partial class PdfEditorView
     void RibbonSelectionChanged(object sender,SelectionChangedEventArgs e)
     {
         if(EditorRibbon==null || EditTool==null)return;
-        if(Tool!="도장"||IsViewing)HideStampPreview();
+        if(Tool!="도장"||(IsViewing&&!CanEditSpread))HideStampPreview();
+        if(CanEditSpread)RefreshSpreadSelection();
         if(continuousLineKind!=null && Tool!=(continuousLineKind=="arrow"?"화살표":"선"))StopContinuousLine();
-        foreach(var tool in RibbonButtons)tool.IsChecked=int.TryParse(tool.Tag?.ToString(),out var index)&&index==(IsViewing ? -1 : EditTool.SelectedIndex);
+        var showActiveTool=!IsViewing||(IsSpreadViewing&&ViewColumns>1);
+        foreach(var tool in RibbonButtons)tool.IsChecked=int.TryParse(tool.Tag?.ToString(),out var index)&&index==(showActiveTool ? EditTool.SelectedIndex : -1);
         if(TextProperties!=null)TextProperties.Visibility=!IsViewing && EditTool.SelectedIndex is 0 or 2 or 3 ? Visibility.Visible : Visibility.Collapsed;
         var active=new SolidColorBrush(Color.FromRgb(221,239,250));
         if(TextToolsButton!=null)TextToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 0 or 2 ? active : Brushes.White;
-        if(DrawingToolsButton!=null)DrawingToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 5 or 6 or 7 or 8 or 12 ? active : Brushes.White;
-        if(MarkupToolsButton!=null)MarkupToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 3 or 9 or 10 or 11 ? active : Brushes.White;
+        if(DrawingToolsButton!=null)DrawingToolsButton.Background=showActiveTool && EditTool.SelectedIndex is 5 or 6 or 7 or 8 or 12 ? active : Brushes.White;
+        if(MarkupToolsButton!=null)MarkupToolsButton.Background=showActiveTool && EditTool.SelectedIndex is 3 or 9 or 10 or 11 ? active : Brushes.White;
         if(EditCanvas!=null){RefreshObjectTools();RefreshObjectProperties();RefreshSelectionDecorations();if(info!=null)RefreshTextAvailability();}
     }
     bool syncingPalette;

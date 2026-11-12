@@ -23,7 +23,7 @@
        <Button x:Name="UndoButton" Visibility="Collapsed" Style="{StaticResource CommandIconStyle}" Command="{x:Static ApplicationCommands.Undo}" Focusable="False" Width="26" Height="26" Margin="4,0,0,0" ToolTip="실행 취소 (Ctrl+Z)" AutomationProperties.Name="실행 취소"><Path Data="M5,9 L1,5 L5,1 M1,5 L11,5 C21,5 21,19 11,19" Stroke="#243C50" StrokeThickness="1.5" Width="16" Height="16" Stretch="Uniform"/></Button>
        <Button x:Name="RedoButton" Visibility="Collapsed" Style="{StaticResource CommandIconStyle}" Command="{x:Static ApplicationCommands.Redo}" Focusable="False" Width="26" Height="26" Margin="1,0,0,0" ToolTip="다시 실행 (Ctrl+Y / Ctrl+Shift+Z)" AutomationProperties.Name="다시 실행"><Path Data="M15,9 L19,5 L15,1 M19,5 L9,5 C-1,5 -1,19 9,19" Stroke="#243C50" StrokeThickness="1.5" Width="16" Height="16" Stretch="Uniform"/></Button>
        <Button x:Name="ZoomOutButton" Content="−" Click="ZoomOut" Width="24" Height="26" Margin="6,0,0,0" ToolTip="축소 (Ctrl+−)" AutomationProperties.Name="축소"/>
-       <ComboBox x:Name="EditZoom" Width="65" Height="26" SelectedIndex="5" SelectionChanged="ZoomChanged" ToolTip="확대율" Margin="2,0"><ComboBoxItem Content="5%"/><ComboBoxItem Content="10%"/><ComboBoxItem Content="25%"/><ComboBoxItem Content="50%"/><ComboBoxItem Content="75%"/><ComboBoxItem Content="100%"/><ComboBoxItem Content="125%"/><ComboBoxItem Content="150%"/><ComboBoxItem Content="200%"/><ComboBoxItem Content="300%"/><ComboBoxItem Content="400%"/><ComboBoxItem Content="800%"/></ComboBox>
+       <ComboBox x:Name="EditZoom" Width="65" Height="26" SelectedIndex="5" SelectionChanged="ZoomChanged" ToolTip="Ctrl+휠 확대 · 가운데 휠 드래그 이동 · Shift+휠 가로 스크롤" Margin="2,0"><ComboBoxItem Content="5%"/><ComboBoxItem Content="10%"/><ComboBoxItem Content="25%"/><ComboBoxItem Content="50%"/><ComboBoxItem Content="75%"/><ComboBoxItem Content="100%"/><ComboBoxItem Content="125%"/><ComboBoxItem Content="150%"/><ComboBoxItem Content="200%"/><ComboBoxItem Content="300%"/><ComboBoxItem Content="400%"/><ComboBoxItem Content="800%"/><ComboBoxItem Content="1200%"/><ComboBoxItem Content="2400%"/><ComboBoxItem Content="3200%"/><ComboBoxItem Content="6400%"/></ComboBox>
        <Button x:Name="ZoomInButton" Content="+" Click="ZoomIn" Width="24" Height="26" ToolTip="확대 (Ctrl++)" AutomationProperties.Name="확대"/>
        <Button x:Name="FitWidthButton" Content="맞춤" Click="FitWidth" Padding="5,2" Height="26" Margin="3,0,0,0" ToolTip="너비 맞춤 (Ctrl+0)" AutomationProperties.Name="너비 맞춤"/>
        <Button x:Name="FitPageButton" Content="쪽" Click="FitPage" Width="25" Height="26" Margin="2,0,0,0" ToolTip="한 페이지 맞춤" AutomationProperties.Name="페이지 맞춤"/>
@@ -93,8 +93,12 @@
   <TextBlock x:Name="EditStatus" DockPanel.Dock="Bottom" Padding="12,7" Text="PDF를 준비하고 있습니다…" TextWrapping="Wrap"/>
   <DockPanel>
    <DockPanel x:Name="PageNavigationPanel" DockPanel.Dock="Left" Width="195" Background="{StaticResource PageWorkspaceBackground}" Visibility="Collapsed">
-    <DockPanel DockPanel.Dock="Top" Margin="12"><Button Content="×" Click="HidePagePane" DockPanel.Dock="Right" Width="25" Height="25" Background="Transparent" BorderThickness="0" Foreground="White" ToolTip="페이지 목록 닫기"/><TextBlock Text="목차" Foreground="White" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/></DockPanel>
-    <ListBox x:Name="EditPages" ContextMenuOpening="PageActionsOpening" SelectionMode="Extended" PreviewMouseRightButtonDown="PageContextTarget" AllowDrop="True" PreviewMouseLeftButtonDown="PageDragDown" PreviewMouseMove="PageDragMove" Drop="PageDragDrop" SelectionChanged="EditorPageChanged" Background="{StaticResource PageWorkspaceBackground}" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+    <DockPanel.Resources>
+     <ItemsPanelTemplate x:Key="SingleColumnThumbnails"><VirtualizingStackPanel/></ItemsPanelTemplate>
+     <ItemsPanelTemplate x:Key="TwoColumnThumbnails"><UniformGrid Columns="2"/></ItemsPanelTemplate>
+    </DockPanel.Resources>
+    <DockPanel DockPanel.Dock="Top" Margin="8"><Button Content="×" Click="HidePagePane" DockPanel.Dock="Right" Width="23" Height="25" Background="Transparent" BorderThickness="0" Foreground="White" ToolTip="페이지 목록 닫기"/><TextBlock Text="목차" Foreground="White" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/></DockPanel>
+    <ListBox x:Name="EditPages" SizeChanged="ChangeThumbnailColumns" ItemsPanel="{StaticResource SingleColumnThumbnails}" ScrollViewer.ScrollChanged="ThumbnailScrolled" ContextMenuOpening="PageActionsOpening" SelectionMode="Extended" PreviewMouseRightButtonDown="PageContextTarget" AllowDrop="True" PreviewMouseLeftButtonDown="PageDragDown" PreviewMouseMove="PageDragMove" Drop="PageDragDrop" SelectionChanged="EditorPageChanged" Background="{StaticResource PageWorkspaceBackground}" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
      <ListBox.ContextMenu><ContextMenu>
       <MenuItem Header="선택 쪽 삭제" Tag="delete" Click="DeleteSelectedPages"/>
       <MenuItem Header="왼쪽 회전" Tag="rotate" Click="RotateLeft"/><MenuItem Header="오른쪽 회전" Tag="rotate" Click="RotateRight"/>
@@ -116,7 +120,24 @@
      <Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="{TemplateBinding Background}"><Border Width="1" Background="#A4ACB5" HorizontalAlignment="Center"/></Border></ControlTemplate></Thumb.Template>
    </Thumb>
    <Grid>
-    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <DockPanel x:Name="PdfNotesPane" Grid.Column="2" Width="230" Visibility="Collapsed" Background="White">
+     <DockPanel DockPanel.Dock="Top" Margin="10,8">
+      <Button DockPanel.Dock="Right" Content="×" Width="24" Click="TogglePdfNotes" ToolTip="메모 닫기"/>
+      <TextBlock Text="PDF 메모" FontWeight="SemiBold" VerticalAlignment="Center"/>
+     </DockPanel>
+     <ListBox x:Name="PdfNotesList" BorderThickness="0" HorizontalContentAlignment="Stretch"
+              ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="NavigateToPdfNote">
+      <ListBox.ItemTemplate>
+       <DataTemplate>
+        <StackPanel Margin="8,5">
+         <TextBlock Text="{Binding Header}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+         <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+        </StackPanel>
+       </DataTemplate>
+      </ListBox.ItemTemplate>
+     </ListBox>
+    </DockPanel>
     <DockPanel x:Name="ObjectPropertiesPane" Grid.Column="1" Width="216" Visibility="Collapsed"
                Background="White" AutomationProperties.Name="객체 특성">
      <Border DockPanel.Dock="Top" BorderBrush="#D9E0E8" BorderThickness="1,0,0,1" Padding="12,8">
@@ -133,14 +154,15 @@
      </Border>
     </DockPanel>
     <ContentControl x:Name="NativeViewingHost" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
-    <ListBox x:Name="SpreadPages" Visibility="Collapsed" Background="#3B3B3B" BorderThickness="0" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" SizeChanged="ResizeSpreads" PreviewMouseWheel="ZoomMouseWheel">
+    <ListBox x:Name="SpreadPages" Visibility="Collapsed" Background="#3B3B3B" BorderThickness="0" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingPanel.CacheLength="1,1" VirtualizingPanel.CacheLengthUnit="Page" ScrollViewer.ScrollChanged="SpreadScrolled" SizeChanged="ResizeSpreads" PreviewMouseWheel="ZoomMouseWheel" PreviewMouseDown="DocumentMouseDown" PreviewMouseMove="DocumentMouseMove" PreviewMouseUp="DocumentMouseUp" LostMouseCapture="DocumentCaptureLost" QueryCursor="DocumentPanCursor">
      <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Focusable" Value="False"/></Style></ListBox.ItemContainerStyle>
-     <ListBox.ItemTemplate><DataTemplate><ItemsControl ItemsSource="{Binding}" Width="{Binding Width}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="{Binding Tag,RelativeSource={RelativeSource AncestorType=ListBox}}"/></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate><Button Click="SpreadPageClicked" Background="Transparent" BorderThickness="0" Padding="5" ToolTip="이 페이지 선택"><StackPanel><Border Background="White"><Image Width="{Binding Width}" Height="{Binding Height}" Stretch="Uniform" Loaded="LoadSpreadImage" Unloaded="CancelPreviewImage" DataContextChanged="SpreadContextChanged"/></Border><TextBlock Text="{Binding Number}" HorizontalAlignment="Center" Foreground="White" Margin="0,5"/></StackPanel></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></DataTemplate></ListBox.ItemTemplate>
+     <ListBox.ItemTemplate><DataTemplate><ItemsControl ItemsSource="{Binding}" Width="{Binding Width}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="{Binding Tag,RelativeSource={RelativeSource AncestorType=ListBox}}"/></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate><Button Click="SpreadPageClicked" Background="Transparent" BorderThickness="0" Padding="5" ToolTip="이 페이지 선택"><StackPanel><Grid x:Name="SpreadPageSurface" Width="{Binding Width}" Height="{Binding Height}" Background="White" ClipToBounds="True" PreviewMouseLeftButtonDown="StartSpreadStroke" PreviewMouseMove="MoveSpreadStroke" MouseLeave="SpreadPointerLeft" PreviewMouseLeftButtonUp="FinishSpreadStroke" PreviewMouseRightButtonDown="FinishSpreadLine" LostMouseCapture="SpreadCaptureLost"><Image Stretch="Fill" Loaded="LoadSpreadImage" SizeChanged="SpreadImageSizeChanged" Unloaded="UnloadSpreadImage" DataContextChanged="SpreadContextChanged"/><Canvas x:Name="SpreadDetailLayer" IsHitTestVisible="False" ClipToBounds="True"/><Viewbox Stretch="Fill"><Canvas Loaded="RefreshSpreadGraphics" DataContextChanged="SpreadOverlayContextChanged"/></Viewbox></Grid><TextBlock Text="{Binding Number}" HorizontalAlignment="Center" Foreground="White" Margin="0,5"/></StackPanel></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></DataTemplate></ListBox.ItemTemplate>
     </ListBox>
     <DockPanel x:Name="EditingArea">
-  <ScrollViewer x:Name="EditScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Background="{StaticResource PageWorkspaceBackground}" Padding="20" PreviewMouseWheel="ZoomMouseWheel" SizeChanged="ZoomViewportChanged">
+  <ScrollViewer x:Name="EditScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Background="{StaticResource PageWorkspaceBackground}" Padding="20" PreviewMouseWheel="ZoomMouseWheel" PreviewMouseDown="DocumentMouseDown" PreviewMouseMove="DocumentMouseMove" PreviewMouseUp="DocumentMouseUp" LostMouseCapture="DocumentCaptureLost" QueryCursor="DocumentPanCursor" SizeChanged="ZoomViewportChanged" ScrollChanged="EditingScrolled">
    <Grid x:Name="EditSurface" HorizontalAlignment="Center" VerticalAlignment="Top" Background="White">
     <Image x:Name="EditPageImage" Stretch="Fill"/>
+    <Canvas x:Name="EditDetailLayer" IsHitTestVisible="False" ClipToBounds="True"/>
     <Canvas x:Name="EditCanvas" LostMouseCapture="CanvasCaptureLost" Focusable="True" Background="Transparent" ContextMenuOpening="AnnotationContextOpening" PreviewMouseLeftButtonDown="SelectAnnotationAtPointer" MouseLeftButtonDown="PageMouseDown" MouseMove="PageMouseMove" MouseLeave="StampPointerLeft" MouseLeftButtonUp="PageMouseUp">
      <Canvas.ContextMenu><ContextMenu>
       <MenuItem Header="실행 취소" Command="{x:Static ApplicationCommands.Undo}" CommandTarget="{Binding PlacementTarget,RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>

@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -31,6 +31,11 @@ public partial class PdfEditorView
         var gesture=drawing!=null||dragging!=null||cancelEditGesture!=null||selectionBox!=null;
         if(e.Command==ApplicationCommands.Save||e.Command==ApplicationCommands.SaveAs){e.CanExecute=info!=null&&!IsBusy&&!gesture;e.Handled=true;return;}
         if(IsTextCommandTarget(e.OriginalSource)){e.CanExecute=false;e.Handled=true;return;}
+        if(IsSpreadViewing&&ViewColumns>1&&(e.Command==ApplicationCommands.Undo||e.Command==ApplicationCommands.Redo)){
+            e.CanExecute=!IsBusy&&(e.Command==ApplicationCommands.Undo?gesture||spreadStroke!=null||spreadLine!=null||undo.Count>0:!gesture&&spreadStroke==null&&redo.Count>0);
+            e.Handled=true;
+            return;
+        }
         if(IsViewing){e.ContinueRouting=true;return;}
         var ready=info!=null&&Page!=null&&!IsBusy;
         if(e.Command==ApplicationCommands.Undo)e.CanExecute=ready&&(drawing!=null||dragging!=null||cancelEditGesture!=null||selectionBox!=null||undo.Count>0);
@@ -43,7 +48,13 @@ public partial class PdfEditorView
     void ExecuteEditCommand(object sender,ExecutedRoutedEventArgs e)
     {
         if(e.Command==ApplicationCommands.Save||e.Command==ApplicationCommands.SaveAs){if(editorOnly&&e.Command==ApplicationCommands.Save)SaveProject(sender,new RoutedEventArgs());else SaveEditedPdf(sender,new RoutedEventArgs());e.Handled=true;return;}
-        if(IsTextCommandTarget(e.OriginalSource)||IsViewing||IsBusy||Page==null)return;
+        if(IsTextCommandTarget(e.OriginalSource)||IsBusy||Page==null)return;
+        if(IsSpreadViewing&&ViewColumns>1&&(e.Command==ApplicationCommands.Undo||e.Command==ApplicationCommands.Redo)){
+            if(e.Command==ApplicationCommands.Undo)Undo();else Redo();
+            e.Handled=true;
+            return;
+        }
+        if(IsViewing)return;
         if(e.Command==ApplicationCommands.Undo)Undo();
         else if(e.Command==ApplicationCommands.Redo)Redo();
         else if(e.Command==ApplicationCommands.Copy){ApplyInlineText();CopyObjects();}

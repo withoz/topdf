@@ -29,9 +29,9 @@ internal static class PdfEditUiTest
                 editor.Undo();
                 var pages=(ListBox)editor.FindName("EditPages");
                 pages.SelectedIndex=2;
-                Click(editor,"쪽 삭제");
+                ClickPageAction(pages,"delete");
                 if(editor.CurrentPlan.Pages.Count!=2) throw new Exception("Delete failed");
-                Click(editor,"앞으로");
+                ClickPageAction(pages,"up");
                 if(editor.CurrentPlan.Pages[0].SourceIndex!=1) throw new Exception("Reorder failed");
                 var output=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(source))!,"ui-edited-"+Guid.NewGuid().ToString("N")+".pdf");
                 await editor.SaveCopyAsync(output);
@@ -46,7 +46,8 @@ internal static class PdfEditUiTest
         };
         app.Run(); return result;
     }
-    static void Click(DependencyObject root,string label) => Descendants(((PdfEditorWindow)root).View.FindName("EditorHistory") as DependencyObject ?? root).OfType<Button>().Single(b=>(b.Content as string)==label).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    static void ClickPageAction(ListBox pages,string action) => pages.ContextMenu.Items.OfType<MenuItem>()
+        .Single(item=>Equals(item.Tag,action)).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
     static IEnumerable<DependencyObject> Descendants(DependencyObject root) {
         for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++) { var child=VisualTreeHelper.GetChild(root,i); yield return child; foreach(var nested in Descendants(child)) yield return nested; }
     }

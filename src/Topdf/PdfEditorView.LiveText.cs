@@ -21,6 +21,7 @@ public partial class PdfEditorView
     }
     void BeginLiveText(PdfSourceText source)
     {
+        ClearViewportPatch();
         inlineCleanPage=null;inlineExactPage=EditPageImage.Source;inlineLiveStops=null;inlineExactText=inlineText?.Text??"";
         inlineLiveInk=new Image {IsHitTestVisible=false,Width=EditCanvas.Width,Height=EditCanvas.Height,Stretch=Stretch.Fill};
         EditCanvas.Children.Add(inlineLiveInk);

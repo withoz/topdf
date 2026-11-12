@@ -10,7 +10,7 @@
 
 ## 설치
 
-Windows 10/11 x64용 **TOPDF 0.4.7 스마트판**을 GitHub에서 받을 수 있습니다. OCR과 로컬 AI 모델을 포함해 설치 파일 크기는 약 700MB입니다. [GitHub 릴리스](https://github.com/withoz/topdf/releases/tag/v0.4.7) · [스마트판 설치 파일](https://github.com/withoz/topdf/releases/download/v0.4.7/TOPDF-Setup-0.4.7-Smart-win-x64.exe)
+Windows 10/11 x64용 **TOPDF 스마트판**은 GitHub 릴리스에서 받을 수 있습니다. OCR과 로컬 AI 모델을 포함해 설치 파일 크기는 약 700MB입니다. [GitHub 릴리스](https://github.com/withoz/topdf/releases)
 
 설치 파일에는 .NET과 Python 런타임이 포함됩니다. WebView2가 없는 PC에서는 최초 설치에 인터넷 연결이 필요합니다. [설치판 안내](docs/INSTALLER.md)
 
@@ -26,6 +26,7 @@ Windows 10/11 x64용 **TOPDF 0.4.7 스마트판**을 GitHub에서 받을 수 있
 | DWG 도면 | DWG | LibreDWG → ezdxf |
 | DXF 도면 | DXF | ezdxf / matplotlib |
 | PDF | PDF | 변환 없이 열기·편집 |
+| 이미지 | PNG, JPG, JPEG | PDF 페이지로 열기 |
 
 PPTX는 기본 모드에서 열 수 있습니다. 구형 PPT를 열면 설치된 LibreOffice를 자동으로 사용합니다. DOC, ODT, ODS, ODP, RTF 등은 설치형 호환 모드에서 처리합니다.
 
@@ -37,7 +38,9 @@ PPTX는 기본 모드에서 열 수 있습니다. 구형 PPT를 열면 설치된
 - 내장 경량 로컬 AI 모델 포함. 문서는 외부 AI 서비스에 전송하지 않습니다.
 - 파일 추가·드래그앤드롭 즉시 자동 변환, 변환 중 추가 파일도 순차 처리, 취소·재시도
 - 작은 문서 탭으로 전환·닫기, 같은 파일 중복 열기 방지
-- PDF 미리보기, 확대·페이지 이동·검색·인쇄
+- PDF 미리보기, 최대 6,400% 확대, 페이지 이동·검색·인쇄
+- 가운데 휠 드래그로 이동, Shift+휠로 가로 스크롤, Ctrl+휠로 포인터 중심 확대
+- 전체 또는 선택한 쪽을 DOCX·PNG·JPG로 내보내기
 - 창 전체 미리보기, 메뉴 버튼으로 파일 목록·기능 표시, F11 전체 화면
 - 체크박스 선택 저장, 전체 선택·해제, 같은 이름 충돌 시 번호 추가
 - 탐색기 연결 프로그램 등록과 파일 열기 시 자동 변환

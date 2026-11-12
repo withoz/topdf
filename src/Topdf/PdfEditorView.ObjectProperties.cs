@@ -28,7 +28,7 @@ public partial class PdfEditorView
     {
         propertiesDismissed = true;
         SetObjectPropertiesVisibility(false);
-        Keyboard.Focus(EditCanvas);
+        Keyboard.Focus(CanEditSpread ? SpreadPages : EditCanvas);
     }
 
     void SetObjectPropertiesVisibility(bool open)
@@ -42,14 +42,15 @@ public partial class PdfEditorView
     void RefreshObjectProperties()
     {
         if (ObjectPropertiesPane == null || info == null) return;
-        var items = !IsViewing && Tool == "선택" && selectionBox == null ? Objects() : [];
+        var items = (!IsViewing || CanEditSpread) && Tool == "선택" && selectionBox == null ? Objects() : [];
         if (items.Count > 0 && !propertiesDismissed && !IsObjectPropertiesOpen)
             SetObjectPropertiesVisibility(true);
         if (!IsObjectPropertiesOpen) return;
 
         var fingerprint = JsonSerializer.Serialize(items.Select(x => new {
             x.Id, x.Kind, x.Color, x.Fill, x.FillUsesStrokeColor, x.FillOpacity, x.StrokeWidth, Line = EffectiveLineStyle(x),
-            x.FontFamily, x.FontSize, x.Alignment, x.Width, x.Height, x.Rotation
+            x.FontFamily, x.FontSize, x.Alignment, x.Width, x.Height, x.Rotation,
+            x.TextBoxFill,x.TextBoxBorderColor,x.TextBoxBorderWidth
         }));
         if (fingerprint == propertiesFingerprint) return;
         propertiesFingerprint = fingerprint;
@@ -160,6 +161,16 @@ public partial class PdfEditorView
                 ResizePropertyText(x);
             }, [("left", "왼쪽"), ("center", "가운데"), ("right", "오른쪽")]);
         }
+        if(items.All(x=>x.Kind=="text")){
+            Choice("글상자 테두리 색상",x=>x.TextBoxBorderColor,(x,value)=>x.TextBoxBorderColor=value,
+                [("none","없음"),..colors],PropertyColorSample);
+            if(items.All(x=>x.TextBoxBorderColor!="none"))
+                Number("글상자 테두리 두께 (pt)",x=>x.TextBoxBorderWidth,(x,value)=>x.TextBoxBorderWidth=value,.5,8);
+            Choice("글상자 채움 색상",x=>x.TextBoxFill,(x,value)=>x.TextBoxFill=value,
+                [("none","없음"),..colors],PropertyColorSample);
+            if(items.All(x=>x.TextBoxFill!="none"))
+                Number("글상자 채움 불투명도 (%)",x=>Math.Round(x.FillOpacity*100,2),(x,value)=>x.FillOpacity=value/100,0,100,"%");
+        }
         if (items.All(x => x.Kind == "stamp"))
         {
             var size = SizeOfPage();
@@ -208,9 +219,9 @@ public partial class PdfEditorView
         ObjectPropertiesFields.Children.Add(field);
     }
 
-    void ApplyDockedProperty<T>(Func<PdfEditElement, T> read, Action<PdfEditElement, T> write, T value)
+    async void ApplyDockedProperty<T>(Func<PdfEditElement, T> read, Action<PdfEditElement, T> write, T value)
     {
-        if (IsViewing || IsBusy || !IsObjectPropertiesOpen || Tool != "선택") return;
+        if ((IsViewing&&!CanEditSpread) || IsBusy || !IsObjectPropertiesOpen || Tool != "선택") return;
         var changed = Objects().Where(item => !EqualityComparer<T>.Default.Equals(read(item), value)).ToArray();
         if (changed.Length == 0) return;
         var before = Capture();
@@ -222,8 +233,9 @@ public partial class PdfEditorView
                 Clamp(item);
             }
             SyncRibbonObjectProperties(Selected);
-            Commit(before);
-            if (changed.Any(x => x.Kind == "replace")) _ = RenderPageAsync();
+            Commit(before,keepSpread:CanEditSpread);
+            if(CanEditSpread)await UpdateViewingAsync(true,true);
+            else if (changed.Any(x => x.Kind == "replace")) _ = RenderPageAsync();
         }
         catch (Exception ex)
         {

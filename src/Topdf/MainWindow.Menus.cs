@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -42,7 +42,7 @@ public partial class MainWindow
     {
         if(!ReferenceEquals(sender,e.Source))return;
         MenuSaveProject.CommandTarget=MenuExportPdf.CommandTarget=pdfEditor?.MenuCanvasTarget;
-        MenuSaveProject.IsEnabled=MenuExportPdf.IsEnabled=pdfEditor!=null;
+        MenuSaveProject.IsEnabled=MenuExportPdf.IsEnabled=MenuExportOther.IsEnabled=pdfEditor!=null;
         MenuCloseTab.IsEnabled=SelectedJob!=null;
         RecentFileMenu.Items.Clear();
         foreach(var path in RecentFiles.Where(File.Exists)) {
@@ -90,6 +90,7 @@ public partial class MainWindow
     {
         if(pdfEditor is not {} editor||sender is not MenuItem {Tag:string action})return;
         if(action=="properties")editor.ToggleObjectProperties();
+        else if(action=="notes")editor.TogglePdfNotes(sender,e);
         else if(action=="outline")editor.ToggleOutlineFromMenu();
         else if(action is "width" or "page")await editor.FitUnifiedZoomAsync(action=="page");
         else if(int.TryParse(action,out var columns))await editor.SetViewColumnsAsync(columns);

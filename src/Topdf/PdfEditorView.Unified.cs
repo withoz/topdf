@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -55,6 +55,8 @@ public partial class PdfEditorView
     public void EnterEditing()
     {
         if((!editorOnly&&NativeViewingHost.Content==null) || info==null || saving)return;
+        CancelSpreadStroke();
+        HideSpreadStampPreview();
         sharedPageViewing=false;EditCanvas.IsHitTestVisible=true;
         SpreadPages.Visibility=Visibility.Collapsed;NativeViewingHost.Visibility=Visibility.Collapsed;if(NativeViewingHost.Content is FrameworkElement viewer)viewer.Visibility=Visibility.Collapsed;EditingArea.Visibility=Visibility.Visible;
         RefreshPagePane();RibbonSelectionChanged(this,new SelectionChangedEventArgs(SelectorEvent,Array.Empty<object>(),Array.Empty<object>()));
@@ -63,6 +65,20 @@ public partial class PdfEditorView
     {
         if(changingView)return;
         TextToolsButton.IsChecked=DrawingToolsButton.IsChecked=MarkupToolsButton.IsChecked=false;
+        CancelSpreadStroke();
+        if(CanEditSpread&&Tool=="선택"){
+            SpreadPages.Focus();
+            return;
+        }
+        if(CanEditSpread&&Tool=="도장"){
+            if(stamp==null)ChooseStamp(this,new RoutedEventArgs());
+            else SpreadPages.Focus();
+            return;
+        }
+        if(IsSpreadViewing&&ViewColumns>1&&CurrentGraphicKind!=null){
+            SpreadPages.Focus();
+            return;
+        }
         await EnterFromViewingAsync();
         if(EditTool.SelectedIndex==4 && stamp==null)ChooseStamp(this,new RoutedEventArgs());
     }
@@ -137,27 +153,79 @@ public partial class PdfEditorView
         try{var path=await PdfEditService.ExportAsync(snapshot,work,PdfEditService.Clone(plan),lifetime.Token);viewingPath=path;viewingPlan=state;return path;}
         finally{saving=false;EnableEditing(true);}
     }
-    public async Task ReturnToViewingAsync(bool force=false)
+    public Task ReturnToViewingAsync(bool force=false) => UpdateViewingAsync(force,false);
+
+    string? spreadBackgroundSource,spreadBackgroundState,spreadBackgroundPath;
+
+    async Task<string> GetSpreadBackgroundAsync()
+    {
+        var background=PdfEditService.Clone(plan);
+        foreach(var page in background.Pages){
+            page.Elements.RemoveAll(element=>element.Kind!="replace");
+            // Keep the source text removal, but draw the replacement at its position in the overlay order.
+            foreach(var element in page.Elements.Where(element=>!element.PreserveSourceStyle))
+                element.Text="";
+        }
+        if(background.Pages.Count==info!.Pages.Length&&
+            !background.Pages.Where((page,index)=>page.SourceIndex!=index||page.Rotation!=0||page.Elements.Count!=0).Any())
+            return snapshot;
+
+        var state=JsonSerializer.Serialize(background,ProjectJson);
+        if(spreadBackgroundSource==snapshot&&spreadBackgroundState==state&&
+            spreadBackgroundPath!=null&&File.Exists(spreadBackgroundPath))return spreadBackgroundPath;
+
+        var path=await PdfEditService.ExportAsync(snapshot,work,background,lifetime.Token);
+        spreadBackgroundSource=snapshot;
+        spreadBackgroundState=state;
+        spreadBackgroundPath=path;
+        return path;
+    }
+
+    async Task UpdateViewingAsync(bool force,bool preserveSpreadSelection)
     {
         var viewer=NativeViewingHost.Content as FrameworkElement;
         if((!editorOnly&&viewer==null)||info==null||saving||changingView||(IsViewing&&!force))return;
+        if(CanEditSpread)CancelPendingEditGesture();
         changingView=true;
+        var viewport=preserveSpreadSelection?CaptureCanvasViewport():null;
         try {
             PenOptions.IsChecked=TextToolsButton.IsChecked=DrawingToolsButton.IsChecked=MarkupToolsButton.IsChecked=false;
             if(useSharedPageView&&ViewColumns==1&&EditingArea.Visibility==Visibility.Visible) {
                 ShowSharedPageView();
                 return;
             }
-            var path=await GetViewingPdfAsync();
-            EnableEditing(false);
-            if(ViewColumns==1 && NavigateViewingPdf!=null)await NavigateViewingPdf(path,EditPages.SelectedIndex+1,CurrentZoomPercent);
-            if(ViewColumns>1)BuildSpreads(path);
-            selectedSource=null;selectedId="";selectedIds.Clear();
+            var useSpread=ViewColumns>1||editorOnly;
+            var liveOverlays=ViewColumns>1;
+            string path;
+            if(liveOverlays){
+                EndGraphic();
+                FinishObjectDrag();
+                ApplyInlineText();
+                EnableEditing(false);
+                path=await GetSpreadBackgroundAsync();
+            }else{
+                path=await GetViewingPdfAsync();
+                EnableEditing(false);
+            }
+            if(!useSpread && NavigateViewingPdf!=null)await NavigateViewingPdf(path,EditPages.SelectedIndex+1,CurrentZoomPercent);
+            if(useSpread){
+                await PrepareSpreadAsync(path);
+                BuildSpreads(path,liveOverlays);
+            }
+            selectedSource=null;
+            if(!preserveSpreadSelection){selectedId="";selectedIds.Clear();}
             sharedPageViewing=false;
-            EditingArea.Visibility=Visibility.Collapsed;NativeViewingHost.Visibility=ViewColumns==1?Visibility.Visible:Visibility.Collapsed;SpreadPages.Visibility=ViewColumns>1?Visibility.Visible:Visibility.Collapsed;if(viewer!=null)viewer.Visibility=ViewColumns==1?Visibility.Visible:Visibility.Collapsed;RefreshPagePane();
+            EditingArea.Visibility=Visibility.Collapsed;NativeViewingHost.Visibility=useSpread?Visibility.Collapsed:Visibility.Visible;SpreadPages.Visibility=useSpread?Visibility.Visible:Visibility.Collapsed;if(viewer!=null)viewer.Visibility=NativeViewingHost.Visibility;RefreshPagePane();
             RibbonSelectionChanged(this,new SelectionChangedEventArgs(SelectorEvent,Array.Empty<object>(),Array.Empty<object>()));
-            if(ViewColumns==1){if(zoomFit!=null&&NativeZoomCommand!=null)await NativeZoomAsync(zoomFit);else await SyncViewingZoomAsync();}
-            EditStatus.Visibility=Visibility.Collapsed;EditStatus.Text="보기";if(ViewColumns==1)viewer?.Focus();else SpreadPages.Focus();
+            if(useSpread){
+                UpdateLayout();
+                if(viewport!=null)RestoreCanvasViewport(viewport);
+                else {ScrollSpreadToSelection();SpreadPages.Focus();}
+            }else{
+                if(zoomFit!=null&&NativeZoomCommand!=null)await NativeZoomAsync(zoomFit);else await SyncViewingZoomAsync();
+                viewer?.Focus();
+            }
+            EditStatus.Visibility=Visibility.Collapsed;EditStatus.Text="보기";
         } catch(OperationCanceledException) {} catch(Exception ex){EditStatus.Visibility=Visibility.Visible;EditStatus.Text=ex.Message;}
         finally{changingView=false;EnableEditing(info!=null&&!saving);}
     }

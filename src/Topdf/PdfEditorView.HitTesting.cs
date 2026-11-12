@@ -6,12 +6,14 @@ using System.Windows.Media;
 namespace Topdf;
 public partial class PdfEditorView
 {
-    bool AnnotationHit(PdfEditElement item,Point point)
+    bool AnnotationHit(PdfEditElement item,Point point) =>
+        HitAnnotation(item,point,(EditSurface.LayoutTransform as ScaleTransform)?.ScaleX??1);
+
+    static bool HitAnnotation(PdfEditElement item,Point point,double zoom)
     {
         var unrotate=new RotateTransform(-item.Rotation,item.X+item.Width/2,item.Y+item.Height/2);
         var local=unrotate.Transform(point);local.Offset(-item.X,-item.Y);
-        var zoom=Math.Max(.01,(EditSurface.LayoutTransform as ScaleTransform)?.ScaleX??1);
-        var tolerance=4/zoom;
+        var tolerance=4/Math.Max(.01,zoom);
         if(!Graphics.Contains(item.Kind))return new Rect(0,0,item.Width,item.Height).Contains(local);
         var inset=GraphicInset(item);
         var bounds=new Rect(inset,inset,Math.Max(.1,item.Width-2*inset),Math.Max(.1,item.Height-2*inset));

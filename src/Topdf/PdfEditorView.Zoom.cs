@@ -3,18 +3,44 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 namespace Topdf;
 public partial class PdfEditorView
 {
     public double CurrentZoomPercent {get;private set;}=100;
-    internal sealed record CanvasViewport(double Zoom,string? Fit,double HorizontalOffset,double VerticalOffset);
-    internal CanvasViewport? CaptureCanvasViewport() => info!=null&&EditingArea.IsVisible
-        ? new(CurrentZoomPercent,zoomFit,EditScroll.HorizontalOffset,EditScroll.VerticalOffset)
-        : null;
+    internal sealed record CanvasViewport(double Zoom,string? Fit,double HorizontalOffset,double VerticalOffset,bool Spread);
+    internal CanvasViewport? CaptureCanvasViewport()
+    {
+        if(info==null)return null;
+        var scroll=IsSpreadViewing?GetSpreadScrollViewer():EditingArea.IsVisible?EditScroll:null;
+        return scroll==null?null:new(CurrentZoomPercent,zoomFit,scroll.HorizontalOffset,scroll.VerticalOffset,IsSpreadViewing);
+    }
+
+    ScrollViewer? GetSpreadScrollViewer()
+    {
+        DependencyObject child=SpreadPages;
+        while(VisualTreeHelper.GetChildrenCount(child)==1){
+            child=VisualTreeHelper.GetChild(child,0);
+            if(child is ScrollViewer scroll)return scroll;
+        }
+        return null;
+    }
 
     internal void RestoreCanvasViewport(CanvasViewport viewport)
     {
-        if(info==null||!EditingArea.IsVisible)return;
+        if(info==null)return;
+        if(viewport.Spread&&IsSpreadViewing){
+            zoomFit=viewport.Fit;
+            SetZoomLabel(viewport.Zoom);
+            UpdateSpreadSizes();
+            if(GetSpreadScrollViewer() is {} spreadScroll){
+                SpreadPages.UpdateLayout();
+                spreadScroll.ScrollToHorizontalOffset(viewport.HorizontalOffset);
+                spreadScroll.ScrollToVerticalOffset(viewport.VerticalOffset);
+            }
+            return;
+        }
+        if(!EditingArea.IsVisible)return;
         zoomResize?.Cancel();
         zoomFit=null;
         SetEditingZoom(viewport.Zoom,null);
@@ -44,7 +70,7 @@ public partial class PdfEditorView
 
     void SetZoomLabel(double value)
     {
-        value=Math.Clamp(value,5,800);if(Math.Abs(value-Math.Round(value))<.2)value=Math.Round(value);
+        value=Math.Clamp(value,5,MaximumZoom);if(Math.Abs(value-Math.Round(value))<.2)value=Math.Round(value);
         CurrentZoomPercent=value;syncingZoom=true;
         try{
             var label=value.ToString("0.#",CultureInfo.InvariantCulture)+"%";
@@ -84,7 +110,7 @@ public partial class PdfEditorView
         catch(OperationCanceledException){}catch(Exception ex){EditStatus.Visibility=Visibility.Visible;EditStatus.Text=ex.Message;}
     }
     public Task SetUnifiedZoomAsync(double percent,Point? anchor=null)=>RunZoomAsync(async()=>{
-        percent=Math.Clamp(percent,5,800);zoomFit=null;
+        percent=Math.Clamp(percent,5,MaximumZoom);zoomFit=null;
         if(IsNativeViewing){
             await SyncViewingZoomAsync();
             for(int i=0;i<32&&Math.Abs(CurrentZoomPercent-percent)>.6;i++){
@@ -107,11 +133,12 @@ public partial class PdfEditorView
         EditScroll.ScrollToHorizontalOffset(EditScroll.HorizontalOffset+after.X-point.X);
         EditScroll.ScrollToVerticalOffset(EditScroll.VerticalOffset+after.Y-point.Y);
         ScheduleSharperPreview();
+        ScheduleViewportRender();
     }
     public Task StepUnifiedZoomAsync(int direction)=>RunZoomAsync(async()=>{
         zoomFit=null;
         if(IsNativeViewing)await NativeZoomAsync(direction>0?"in":"out");
-        else {var next=Math.Clamp(CurrentZoomPercent*Math.Pow(1.15,direction),5,800);if(IsSpreadViewing){SetZoomLabel(next);UpdateSpreadSizes();}else SetEditingZoom(next,null);}
+        else {var next=Math.Clamp(CurrentZoomPercent*Math.Pow(1.15,direction),5,MaximumZoom);if(IsSpreadViewing){SetZoomLabel(next);UpdateSpreadSizes();}else SetEditingZoom(next,null);}
     });
     void UpdateZoomAdorners()
     {
@@ -146,10 +173,18 @@ public partial class PdfEditorView
     async void ZoomMouseWheel(object sender,MouseWheelEventArgs e)
     {
         if(info==null||saving||e.Delta==0)return;
+        if(documentPan!=null){e.Handled=true;return;}
+        if(Keyboard.Modifiers==ModifierKeys.Shift && !IsTextCommandTarget(e.OriginalSource) &&
+            DocumentScroll(sender) is {} horizontal && horizontal.ScrollableWidth>0) {
+            ScrollDocumentHorizontally(horizontal,e.Delta);
+            e.Handled=true;
+            return;
+        }
         if(Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) {
             e.Handled=true;
             var zoom=CurrentZoomPercent*Math.Pow(1.15,e.Delta/120.0);
-            await SetUnifiedZoomAsync(zoom,IsSpreadViewing?null:e.GetPosition(EditScroll));
+            if(IsSpreadViewing)await ZoomSpreadAtPointerAsync(zoom,e);
+            else await SetUnifiedZoomAsync(zoom,e.GetPosition(EditScroll));
             return;
         }
 
@@ -193,6 +228,7 @@ public partial class PdfEditorView
     {
         if(ReferenceEquals(sender,this)&&PageNavigationPanel!=null&&PageNavigationPanel.Width>Math.Max(120,ActualWidth-300))
             SetPagePaneWidth(PageNavigationPanel.Width);
+        ScheduleViewportRender();
         if(zoomFit==null||info==null)return;
         var mode=zoomFit;zoomResize?.Cancel();zoomResize?.Dispose();zoomResize=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=zoomResize.Token;
         try{await Task.Delay(180,token);if(!token.IsCancellationRequested&&zoomFit==mode)await FitUnifiedZoomAsync(mode=="page");}catch(OperationCanceledException){}
@@ -200,10 +236,15 @@ public partial class PdfEditorView
     async void ScheduleSharperPreview()
     {
         sharpPreview?.Cancel();sharpPreview?.Dispose();
-        if(IsNativeViewing||IsSpreadViewing||Page==null||CurrentZoomPercent<150||selectedSource!=null||addedTextCommit!=null||drawing!=null)return;
+        if(IsNativeViewing||IsSpreadViewing||Page==null||selectedSource!=null||addedTextCommit!=null||drawing!=null)return;
         sharpPreview=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=sharpPreview.Token;var version=renderVersion;var page=Page;
         try{
-            await Task.Delay(250,token);var size=SizeOfPage();var pixels=(int)Math.Clamp(Math.Max(size.W,size.H)*CurrentZoomPercent/75*VisualTreeHelper.GetDpi(this).DpiScaleX,1800,3600);
+            await Task.Delay(250,token);
+            var size=SizeOfPage();var dpi=VisualTreeHelper.GetDpi(this);
+            var requested=Math.Max(size.W*dpi.DpiScaleX,size.H*dpi.DpiScaleY)*CurrentZoomPercent/75;
+            if(requested>4200)return;
+            var pixels=(int)Math.Clamp(Math.Ceiling(requested/300)*300,1800,4200);
+            if(EditPageImage.Source is BitmapSource visible&&Math.Max(visible.PixelWidth,visible.PixelHeight)>=pixels*0.9)return;
             var key=$"sharp:{page.SourceIndex}:{page.Rotation}:{pixels}:"+System.Text.Json.JsonSerializer.Serialize(page.Elements.Where(x=>x.Kind=="replace"));
             if(!renders.TryGetValue(key,out var path)){path=await PdfEditService.RenderAsync(snapshot,work,page.SourceIndex,page.Rotation,token,PdfEditService.Clone(plan),pixels);renders[key]=path;}
             if(!token.IsCancellationRequested&&version==renderVersion&&!IsNativeViewing&&!IsSpreadViewing&&selectedSource==null&&addedTextCommit==null)EditPageImage.Source=LoadImage(path);

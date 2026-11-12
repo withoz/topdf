@@ -337,7 +337,7 @@ internal static class DrawingUiTest
                 var stampSelection=(List<PdfEditElement>)Call(view,"Objects")!;
                 var pivot=new Point(originalStamp.X+originalStamp.Width/2,originalStamp.Y+originalStamp.Height/2);
                 Check((bool)Call(view,"RotateSelectionFrom",stampSelection,new[]{originalStamp},pivot,37)!,"Free rotation fits");
-                Call(view,"Commit",rotationSnapshot);
+                Call(view,"Commit",rotationSnapshot,false);
                 Check(Stamp().Rotation==37&&Math.Abs(Stamp().X-originalStamp.X)<.001&&Math.Abs(Stamp().Y-originalStamp.Y)<.001,
                     "Free rotation keeps the center and records a non-right angle");
                 view.Undo();Check(Stamp().Rotation==0,"Free rotation Undo");

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 namespace Topdf;
 
@@ -7,7 +7,7 @@ public sealed class ConversionService
     static readonly HashSet<string> Office = new(StringComparer.OrdinalIgnoreCase)
         { ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp", ".rtf" };
     static readonly HashSet<string> Native = new(StringComparer.OrdinalIgnoreCase) { ".hwp", ".hwpx", ".dwg", ".dxf" };
-    public static bool Supports(string path) => Office.Contains(Path.GetExtension(path)) || Native.Contains(Path.GetExtension(path)) || Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
+    public static bool Supports(string path) => IndependentConversion.IsImage(path) || Office.Contains(Path.GetExtension(path)) || Native.Contains(Path.GetExtension(path)) || Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
     public static string? FindOda() {
         var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ODA");
         return Directory.Exists(root) ? Directory.GetFiles(root, "ODAFileConverter.exe", SearchOption.AllDirectories).OrderDescending().FirstOrDefault() : null;
@@ -23,7 +23,7 @@ public sealed class ConversionService
         if (!File.Exists(input)) throw new FileNotFoundException("원본 파일을 찾을 수 없습니다.", input);
         if (!Supports(input)) throw new NotSupportedException("이 형식은 아직 연결된 변환 엔진이 없습니다.");
         if (Path.GetExtension(input).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) return input;
-        if (!useCompatibilityEngines && !Path.GetExtension(input).Equals(".ppt", StringComparison.OrdinalIgnoreCase)) return await IndependentConversion.ConvertAsync(input, root, cancellation);
+        if (IndependentConversion.IsImage(input) || (!useCompatibilityEngines && !Path.GetExtension(input).Equals(".ppt", StringComparison.OrdinalIgnoreCase))) return await IndependentConversion.ConvertAsync(input, root, cancellation);
         if (Native.Contains(Path.GetExtension(input))) return await ConvertNativeAsync(input, root, cancellation);
         var engine = FindLibreOffice() ?? throw new InvalidOperationException("LibreOffice 설치가 필요합니다.");
         var job = Path.Combine(root, Guid.NewGuid().ToString("N"));
