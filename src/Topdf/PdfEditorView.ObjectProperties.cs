@@ -48,9 +48,9 @@ public partial class PdfEditorView
         if (!IsObjectPropertiesOpen) return;
 
         var fingerprint = JsonSerializer.Serialize(items.Select(x => new {
-            x.Id, x.Kind, x.Color, x.Fill, x.FillUsesStrokeColor, x.FillOpacity, x.StrokeWidth, Line = EffectiveLineStyle(x),
+            x.Id, x.Kind, x.NoteRegion, x.Color, x.Fill, x.FillUsesStrokeColor, x.FillOpacity, x.StrokeWidth, Line = EffectiveLineStyle(x),
             x.FontFamily, x.FontSize, x.Alignment, x.Width, x.Height, x.Rotation,
-            x.TextBoxFill,x.TextBoxBorderColor,x.TextBoxBorderWidth,x.ImageOpacity,x.LockImageAspectRatio
+            x.TextBoxFill,x.TextBoxBorderColor,x.TextBoxBorderLineStyle,x.TextBoxBorderWidth,x.ImageOpacity,x.LockImageAspectRatio
         }));
         if (fingerprint == propertiesFingerprint) return;
         propertiesFingerprint = fingerprint;
@@ -67,6 +67,19 @@ public partial class PdfEditorView
             Text = items.Count == 1 ? ObjectKindLabel(items[0].Kind) : $"객체 {items.Count}개 선택",
             FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4)
         });
+        if (items.Count == 1 && items[0].NoteRegion is { } region)
+        {
+            var origin = plan.Pages.FindIndex(page => page.SourceIndex == region.SourceIndex);
+            var jump = new Button {
+                Content = origin < 0 ? "원래 영역의 페이지가 삭제됨" : $"원래 영역 · {origin + 1}쪽",
+                IsEnabled = origin >= 0, MinHeight = 25
+            };
+            jump.Click += async (_, _) => {
+                var index = plan.Pages.FindIndex(page => page.SourceIndex == region.SourceIndex);
+                if (index >= 0) await NavigateToPageAsync(index + 1);
+            };
+            ObjectPropertiesFields.Children.Add(jump);
+        }
 
         void Choice(string label, Func<PdfEditElement, string> read, Action<PdfEditElement, string> write,
             (string Value, string Label)[] choices, Func<string, FrameworkElement?>? preview = null)
@@ -94,7 +107,7 @@ public partial class PdfEditorView
             double min, double max, string unit = "pt")
         {
             var values = items.Select(read).Distinct().ToArray();
-            var original = values.Length == 1 ? values[0].ToString("0.##", CultureInfo.CurrentCulture) : "";
+            var original = values.Length == 1 && double.IsFinite(values[0]) ? values[0].ToString("0.##", CultureInfo.CurrentCulture) : "";
             var box = new TextBox { Text = original, MinHeight = 25, MaxLength = 12, VerticalContentAlignment = VerticalAlignment.Center,
                 ToolTip = values.Length > 1 ? "혼합 값 · 입력 후 Enter" : "입력 후 Enter" };
             void Apply()
@@ -129,11 +142,12 @@ public partial class PdfEditorView
                 if (x.Kind == "replace") x.PreserveSourceStyle = false;
             }, colors, PropertyColorSample);
 
+        (string Value, string Label)[] lineStyles = [("solid", "실선"), ("dotted", "점선"), ("dashed", "파선"), ("dashdot", "일점쇄선"), ("dashdotdot", "이점쇄선")];
         if (items.All(x => Graphics.Contains(x.Kind)))
         {
             Number("선 두께 (pt)", x => x.StrokeWidth, (x, value) => x.StrokeWidth = value, 1, 8);
             Choice("선 종류", EffectiveLineStyle, (x, value) => { x.LineStyle = value; x.Dashed = value == "dashed"; },
-                [("solid", "실선"), ("dotted", "점선"), ("dashed", "파선"), ("dashdot", "일점쇄선"), ("dashdotdot", "이점쇄선")], PropertyLineSample);
+                lineStyles, PropertyLineSample);
         }
         if (items.All(x => x.Kind is "rectangle" or "ellipse"))
         {
@@ -143,8 +157,18 @@ public partial class PdfEditorView
                     x.Fill = x.FillUsesStrokeColor ? x.Color : value;
                 }, [("none", "없음"), ("stroke", "테두리 색"), ..colors], PropertyColorSample);
             if(items.All(x=>x.Fill!="none"))
-                Number("채움 불투명도 (%)", x => Math.Round(x.FillOpacity*100,2),
-                    (x, value) => x.FillOpacity=value/100, 0, 100, "%");
+                AddFillOpacityField("채움 불투명도 (%)", items, revision);
+            var size = SizeOfPage();
+            var maxDimension = Math.Max(size.W, size.H);
+            Number("너비 (pt)", x => x.Width, (x, value) => x.Width = value, 1, maxDimension);
+            Number("높이 (pt)", x => x.Height, (x, value) => x.Height = value, 1, maxDimension);
+            if(items.All(x=>x.Kind=="ellipse"))
+                Number("반지름 (pt)", x => Math.Abs(x.Width-x.Height)<.000001 ? x.Width/2 : double.NaN,
+                    (x, radius) => {
+                        x.X += x.Width/2-radius;
+                        x.Y += x.Height/2-radius;
+                        x.Width=x.Height=radius*2;
+                    }, .5, Math.Min(size.W,size.H)/2);
         }
 
         if (items.All(x => x.Kind is "text" or "note" or "replace"))
@@ -164,12 +188,15 @@ public partial class PdfEditorView
         if(items.All(x=>x.Kind=="text")){
             Choice("글상자 테두리 색상",x=>x.TextBoxBorderColor,(x,value)=>x.TextBoxBorderColor=value,
                 [("none","없음"),..colors],PropertyColorSample);
-            if(items.All(x=>x.TextBoxBorderColor!="none"))
+            if(items.All(x=>x.TextBoxBorderColor!="none")) {
                 Number("글상자 테두리 두께 (pt)",x=>x.TextBoxBorderWidth,(x,value)=>x.TextBoxBorderWidth=value,.5,8);
+                Choice("글상자 테두리 선 종류", x => x.TextBoxBorderLineStyle,
+                    (x, value) => x.TextBoxBorderLineStyle = value, lineStyles, PropertyLineSample);
+            }
             Choice("글상자 채움 색상",x=>x.TextBoxFill,(x,value)=>x.TextBoxFill=value,
                 [("none","없음"),..colors],PropertyColorSample);
             if(items.All(x=>x.TextBoxFill!="none"))
-                Number("글상자 채움 불투명도 (%)",x=>Math.Round(x.FillOpacity*100,2),(x,value)=>x.FillOpacity=value/100,0,100,"%");
+                AddFillOpacityField("글상자 채움 불투명도 (%)", items, revision);
         }
         if (items.All(x => x.Kind == "stamp"))
         {
@@ -194,6 +221,19 @@ public partial class PdfEditorView
             Choice("회전", x => x.Rotation.ToString(CultureInfo.InvariantCulture),
                 (x, value) => x.Rotation = int.Parse(value, CultureInfo.InvariantCulture),
                 [("0", "0°"), ("90", "90°"), ("180", "180°"), ("270", "270°")]);
+        }
+        if (items.All(item => item.Kind != "replace") && !CanEditSpread)
+        {
+            var actions = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+            foreach (var (label, handler) in new (string, RoutedEventHandler)[] {
+                ("회전", RotateObjects), ("맨 앞", BringForward), ("맨 뒤", SendBackward)
+            })
+            {
+                var button = new Button { Content = label, Padding = new Thickness(6, 2, 6, 2), Margin = new Thickness(0, 0, 4, 4) };
+                button.Click += handler;
+                actions.Children.Add(button);
+            }
+            ObjectPropertiesFields.Children.Add(actions);
         }
         if (ObjectPropertiesFields.Children.Count == 1)
             ObjectPropertiesFields.Children.Add(new TextBlock { Text = "공통 편집 속성이 없습니다.", TextWrapping = TextWrapping.Wrap });
@@ -250,7 +290,7 @@ public partial class PdfEditorView
             SyncRibbonObjectProperties(Selected);
             Commit(before,keepSpread:CanEditSpread);
             if(CanEditSpread) {
-                if(updateSpread)await UpdateViewingAsync(true,true);
+                if(updateSpread)await RefreshSpreadAfterTransformAsync(changed.ToList());
                 else { PreviewStampOpacity(changed,null); RefreshObjectProperties(); }
             }
             else if (changed.Any(x => x.Kind == "replace")) _ = RenderPageAsync();

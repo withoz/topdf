@@ -42,11 +42,18 @@ public partial class PdfEditorView
     }
     public void AttachDocumentTabs(FrameworkElement tabs)
     {
-        DocumentTabsHost.Content=tabs;DocumentTabsHost.Visibility=Visibility.Visible;
+        DocumentTabsHost.Content=tabs;
+        DocumentTabsHost.Visibility=Visibility.Visible;
+        DocumentPathLabel.SetBinding(TextBlock.TextProperty,
+            new System.Windows.Data.Binding("SelectedItem.Source") { Source=tabs });
+        DocumentPathBar.Visibility=Visibility.Visible;
     }
     public void DetachDocumentTabs()
     {
-        DocumentTabsHost.Content=null;DocumentTabsHost.Visibility=Visibility.Collapsed;
+        DocumentTabsHost.Content=null;
+        DocumentTabsHost.Visibility=Visibility.Collapsed;
+        System.Windows.Data.BindingOperations.ClearBinding(DocumentPathLabel,TextBlock.TextProperty);
+        DocumentPathBar.Visibility=Visibility.Collapsed;
     }
     public FrameworkElement? DetachNativeViewer()
     {
@@ -64,6 +71,8 @@ public partial class PdfEditorView
     async void RibbonToolClicked(object sender,RoutedEventArgs e)
     {
         if(changingView)return;
+        RegionTool.IsChecked=false;
+        ClearRegion();
         TextToolsButton.IsChecked=DrawingToolsButton.IsChecked=MarkupToolsButton.IsChecked=false;
         CancelSpreadStroke();
         if(CanEditSpread&&Tool=="선택"){
@@ -75,7 +84,7 @@ public partial class PdfEditorView
             else SpreadPages.Focus();
             return;
         }
-        if(IsSpreadViewing&&ViewColumns>1&&CurrentGraphicKind!=null){
+        if(CanEditSpread&&(CurrentGraphicKind!=null || Tool is "메모" or "글자")){
             SpreadPages.Focus();
             return;
         }
@@ -143,7 +152,7 @@ public partial class PdfEditorView
     }
     public async Task<string> GetViewingPdfAsync()
     {
-        commitPendingStampOpacity?.Invoke();
+        commitPendingOpacity?.Invoke();
         if(info==null || saving)throw new InvalidOperationException("문서 준비가 끝난 뒤 사용하세요.");
         EndGraphic();FinishObjectDrag();ApplyInlineText();
         if(selectedSource!=null && inlineText!=null && inlineText.Text!=(Page?.Elements.FirstOrDefault(x=>x.SourceTextId==selectedSource.Id)?.Text??selectedSource.Text))throw new InvalidOperationException("입력 내용을 적용한 뒤 다시 시도하세요.");

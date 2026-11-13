@@ -47,7 +47,8 @@ public partial class PdfEditorView
                 var width=Math.Min(item.TextBoxBorderWidth,Math.Min(ActualWidth,ActualHeight));
                 if(width>0){
                     var brush=(Brush)new BrushConverter().ConvertFromString(item.TextBoxBorderColor)!;
-                    context.DrawRectangle(null,new Pen(brush,width),
+                    var pen = new Pen(brush, width) { DashStyle = new DashStyle(LineDashArray(new() { LineStyle = item.TextBoxBorderLineStyle }), 0) };
+                    context.DrawRectangle(null,pen,
                         new Rect(width/2,width/2,ActualWidth-width,ActualHeight-width));
                 }
             }
@@ -157,9 +158,21 @@ public partial class PdfEditorView
         if(drawingBefore!=null)selectedIds.UnionWith(drawingBefore.Selection);
         drawingBefore=null;EditCanvas.ReleaseMouseCapture();DrawElements();
     }
+    static Point CircleDragEnd(Point start, Point end, double width, double height)
+    {
+        var dx = end.X - start.X;
+        var dy = end.Y - start.Y;
+        var availableX = dx < 0 ? start.X : width - start.X;
+        var availableY = dy < 0 ? start.Y : height - start.Y;
+        var diameter = Math.Min(Math.Max(Math.Abs(dx), Math.Abs(dy)), Math.Min(availableX, availableY));
+        return new Point(start.X + Math.CopySign(diameter, dx), start.Y + Math.CopySign(diameter, dy));
+    }
+
     void UpdateGraphic(Point p)
     {
         if(drawing==null)return;var size=SizeOfPage();p.X=Math.Clamp(p.X,0,size.W);p.Y=Math.Clamp(p.Y,0,size.H);
+        if(drawing.Kind=="ellipse" && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            p=CircleDragEnd(drawingStart,p,size.W,size.H);
         if(drawing.Kind=="freehand") {if(drawing.Points.Count<10000)drawing.Points.Add(new[]{p.X,p.Y});} else drawing.Points=[new[]{drawingStart.X,drawingStart.Y},new[]{p.X,p.Y}];
         if(drawing.Kind is "underline" or "strikeout") { var y=drawingStart.Y; drawing.Points=[new[]{drawingStart.X,y},new[]{p.X,y}]; }
         if(!HasDrawingGesture(drawing))return;
@@ -190,15 +203,25 @@ public partial class PdfEditorView
         var before=drawingBefore!;drawing=null;drawingBefore=null;EditCanvas.ReleaseMouseCapture();Commit(before);return true;
     }
     Action? addedTextCommit;
-    void CanvasCaptureLost(object sender,MouseEventArgs e){if(FinishAreaSelection(true))return;if(drawing!=null)EndGraphic();FinishObjectDrag();}
-    void BeginAddedText()
+    TextBox? addedTextInput;
+    void CanvasCaptureLost(object sender,MouseEventArgs e){if(regionCanvas==EditCanvas && !EditCanvas.IsMouseCaptured)ClearRegion();if(FinishAreaSelection(true))return;if(drawing!=null)EndGraphic();FinishObjectDrag();}
+    void BeginAddedText(Canvas? spreadOverlay=null)
     {
-        if(Selected is not {} item)return;var editBefore=Capture();DrawElements();
-        foreach(var visual in EditCanvas.Children.OfType<FrameworkElement>().Where(x=>x is System.Windows.Controls.Primitives.Thumb || x.Tag is PdfEditElement element && element.Id==item.Id).ToArray())EditCanvas.Children.Remove(visual);
-        var box=new TextBox {MaxLength=5000,Text=item.Text,Width=item.Width,Height=item.Height,FontFamily=new FontFamily(item.FontFamily),TextAlignment=AlignmentOf(item),Background=item.Kind=="note"?new SolidColorBrush(Color.FromRgb(255,243,175)):Brushes.White,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(1),Padding=new Thickness(item.Kind=="note"?7:1),VerticalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Foreground=(Brush)new BrushConverter().ConvertFromString(item.Color)!,RenderTransformOrigin=new Point(.5,.5),RenderTransform=new RotateTransform(item.Rotation),FontSize=item.FontSize,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap};
-        if(item.Kind=="text"&&item.TextBoxFill!="none")box.Background=TextBoxFillBrush(item);
+        if(Selected is not {} item)return;
+        var editBefore=Capture();
+        var surface=spreadOverlay??EditCanvas;
+        if(spreadOverlay==null)DrawElements();
+        else RefreshSpreadGraphics(surface,new RoutedEventArgs());
+        foreach(var visual in surface.Children.OfType<FrameworkElement>().Where(x=>(x is System.Windows.Controls.Primitives.Thumb && (spreadOverlay!=null || !Equals(x.Tag,"object-rotation"))) || (x is not System.Windows.Shapes.Path && x.Tag is PdfEditElement element && element.Id==item.Id)).ToArray())surface.Children.Remove(visual);
+        var box=new TextBox {MaxLength=5000,Text=item.Text,Width=item.Width,Height=item.Height,FontFamily=new FontFamily(item.FontFamily),TextAlignment=AlignmentOf(item),Background=item.Kind=="note"?new SolidColorBrush(Color.FromRgb(255,243,175)):Brushes.White,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(1),Padding=new Thickness(item.Kind=="note"?NotePadding:1),VerticalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Foreground=(Brush)new BrushConverter().ConvertFromString(item.Color)!,RenderTransformOrigin=new Point(.5,.5),RenderTransform=new RotateTransform(item.Rotation),FontSize=item.FontSize,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap};
+        if(item.Kind=="text") {
+            box.VerticalContentAlignment=VerticalAlignment.Center;
+            if(item.TextBoxFill!="none")box.Background=TextBoxFillBrush(item);
+        }
+        addedTextInput=box;
+        box.Tag=item;
         box.IsUndoEnabled=false;box.IsUndoEnabled=true;
-        Canvas.SetLeft(box,item.X);Canvas.SetTop(box,item.Y);EditCanvas.Children.Add(box);
+        Canvas.SetLeft(box,item.X);Canvas.SetTop(box,item.Y);surface.Children.Add(box);
         TextBlock.SetLineHeight(box,item.FontSize*1.35);
         var done=false;
         void ResizeInput()
@@ -209,17 +232,20 @@ public partial class PdfEditorView
             // Keep room for the caret and the syllable being composed by the Korean IME.
             box.Width=item.AutoWidth ? Math.Min(available,item.Width+Math.Max(6,item.FontSize)) : item.Width;
             box.Height=item.Height;
+            UpdateNoteRegionVisual(surface,item);
             box.ScrollToHorizontalOffset(0);
+            if(spreadOverlay==null && surface.Children.OfType<System.Windows.Controls.Primitives.Thumb>().FirstOrDefault(x=>Equals(x.Tag,"object-rotation")) is {} handle)
+                PlaceRotationHandle(handle,[item]);
         }
         ResizeInput();
         box.TextChanged+=(_,_)=>ResizeInput();
         TextCompositionManager.AddPreviewTextInputUpdateHandler(box,(_,_)=> {
             _=Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded,new Action(ResizeInput));
         });
-        void Finish(){if(done)return;done=true;addedTextCommit=null;var before=editBefore;item.Text=string.IsNullOrWhiteSpace(box.Text)?"텍스트":box.Text;EditText.Text=item.Text;FitTextBox(item,item.Text);Clamp(item);Commit(before);}
+        void Finish(){if(done)return;done=true;addedTextCommit=null;addedTextInput=null;var before=editBefore;item.Text=string.IsNullOrWhiteSpace(box.Text)?"텍스트":box.Text;EditText.Text=item.Text;FitTextBox(item,item.Text);Clamp(item);surface.Children.Remove(box);Commit(before,keepSpread:spreadOverlay!=null);if(spreadOverlay!=null)RefreshSpreadGraphics(surface,new RoutedEventArgs());}
         addedTextCommit=Finish;
         box.LostKeyboardFocus+=(_,_)=>Finish();box.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){Finish();e.Handled=true;}};
-        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,new Action(()=>{if(!done&&EditCanvas.Children.Contains(box)){box.Focus();Keyboard.Focus(box);box.SelectAll();}}));
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,new Action(()=>{if(!done&&surface.Children.Contains(box)){box.Focus();Keyboard.Focus(box);box.SelectAll();}}));
     }
     void DrawResizeHandle()
     {
@@ -277,16 +303,25 @@ public partial class PdfEditorView
                         x.Y=anchor.Y+(old.Y-anchor.Y)*factor;
                     }
                     x.Height=old.Height;
-                } else if (items.Count == 1 && x.Kind == "stamp" && !old.LockImageAspectRatio) {
+                } else if (items.Count == 1 &&
+                    ((x.Kind is "rectangle" or "ellipse") && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ||
+                     x.Kind == "stamp" && !old.LockImageAspectRatio || x.Kind == "note")) {
                     var angle = old.Rotation * Math.PI / 180;
                     var horizontal = new Vector(Math.Cos(angle), Math.Sin(angle));
                     var vertical = new Vector(-horizontal.Y, horizontal.X);
                     x.Width = Math.Max(1, old.Width + Vector.Multiply(total, horizontal));
                     x.Height = Math.Max(1, old.Height + Vector.Multiply(total, vertical));
+                    if (x.Kind == "note")
+                    {
+                        x.AutoWidth = false;
+                        x.ManualNoteHeight = true;
+                        x.Width = Math.Max(MinimumNoteWidth(x), x.Width);
+                        x.Height = Math.Max(x.Height, RequiredBoxHeight(x, x.Text, NotePadding));
+                    }
                     var center = anchor + horizontal * (x.Width / 2) + vertical * (x.Height / 2);
                     x.X = center.X - x.Width / 2;
                     x.Y = center.Y - x.Height / 2;
-                } else if(items.Count==1 && x.Rotation==0 && x.Kind is ("text" or "note")) {
+                } else if(items.Count==1 && x.Rotation==0 && x.Kind=="text") {
                     x.AutoWidth=false;
                     x.Width=Math.Max(24,old.Width+total.X);
                     FitTextBox(x,x.Text);
@@ -301,7 +336,7 @@ public partial class PdfEditorView
             foreach(var x in items) {
                 var old=original.Single(i=>i.Id==x.Id);
                 x.X=old.X;x.Y=old.Y;x.Width=old.Width;x.Height=old.Height;
-                x.FontSize=old.FontSize;x.AutoWidth=old.AutoWidth;
+                x.FontSize=old.FontSize;x.AutoWidth=old.AutoWidth;x.ManualNoteHeight=old.ManualNoteHeight;
             }
         }
     }
@@ -343,6 +378,7 @@ public partial class PdfEditorView
     {
         foreach(var border in EditCanvas.Children.OfType<AnnotationBorder>().ToArray()) {
             if(border.Tag is not PdfEditElement item || !items.Contains(item))continue;
+            UpdateNoteRegionVisual(EditCanvas,item);
             if(Graphics.Contains(item.Kind)) {
                 // Recreate the stroke from the same coordinates used by the final page and the selection outline.
                 var index=EditCanvas.Children.IndexOf(border);
@@ -400,7 +436,32 @@ public partial class PdfEditorView
         } catch(Exception ex){Restore(before);ShowPageOperationError(ex.Message);}
     }
     public void CopyObjects(){copied=PdfEditService.Clone(new(){Pages=[new(){Elements=Objects()}]}).Pages[0].Elements;}
-    public void PasteObjects(){if(Page==null||copied.Count==0)return;var before=Capture();selectedIds.Clear();foreach(var x in PdfEditService.Clone(new(){Pages=[new(){Elements=copied}]}).Pages[0].Elements){if(x.Kind=="replace"){x.Kind="text";x.PreserveSourceStyle=false;x.FontFamily="Malgun Gothic";x.SourceTextId=null;x.SourceText=null;}x.Id=Guid.NewGuid().ToString("N");x.X+=12;x.Y+=12;Clamp(x);Page.Elements.Add(x);selectedIds.Add(x.Id);}selectedId=selectedIds.FirstOrDefault()??"";Commit(before);}
+    public async void PasteObjects()
+    {
+        if(Page is not {} page||copied.Count==0||IsBusy)return;
+        var pasted=PdfEditService.Clone(new(){Pages=[new(){Elements=copied}]}).Pages[0].Elements;
+        try{
+            foreach(var item in pasted){
+                if(item.Kind=="replace"){
+                    item.Kind="text";item.PreserveSourceStyle=false;item.FontFamily="Malgun Gothic";
+                    item.SourceTextId=null;item.SourceText=null;
+                }
+                item.Id=Guid.NewGuid().ToString("N");
+                item.X+=12;item.Y+=12;
+                Clamp(item);
+            }
+        }catch(InvalidOperationException ex){ShowPageOperationError(ex.Message);return;}
+        var before=Capture();
+        page.Elements.AddRange(pasted);
+        selectedIds.Clear();
+        selectedIds.UnionWith(pasted.Select(item=>item.Id));
+        selectedId=pasted[0].Id;
+        selectedSource=null;
+        EditTool.SelectedIndex=1;
+        var spread=CanEditSpread;
+        Commit(before,keepSpread:spread);
+        if(spread)await RefreshSpreadAfterTransformAsync(pasted);
+    }
     void RotateObjects(object sender,RoutedEventArgs e)
     {
         if(IsBusy||IsViewing)return;
@@ -433,7 +494,7 @@ public partial class PdfEditorView
     static readonly JsonSerializerOptions ProjectJson=new(){PropertyNamingPolicy=JsonNamingPolicy.CamelCase,PropertyNameCaseInsensitive=true};
     public async Task SaveProjectAsync(string destination)
     {
-        commitPendingStampOpacity?.Invoke();
+        commitPendingOpacity?.Invoke();
         if(saving||info==null)throw new InvalidOperationException("준비 후 저장하세요.");if(File.Exists(destination))throw new IOException("새 파일 이름을 선택하세요.");EndGraphic();ApplyInlineText();saving=true;EnableEditing(false);
         var temp=System.IO.Path.Combine(work,Guid.NewGuid()+".topdf");
         try {
@@ -464,7 +525,7 @@ public partial class PdfEditorView
         saving=true;EnableEditing(false);try {
         var folder=System.IO.Path.Combine(work,Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);
         using var zip=ZipFile.OpenRead(path);if(zip.GetEntry("plan.json") is not {} jsonEntry || jsonEntry.Length>10_000_000)throw new IOException("편집 계획 한도 초과");if(zip.Entries.Count>5002 || zip.Entries.Sum(x=>x.Length)>300_000_000)throw new IOException("편집 파일 크기 한도 초과");
-        await Task.Run(()=>{foreach(var entry in zip.Entries){var full=System.IO.Path.GetFullPath(System.IO.Path.Combine(folder,entry.FullName));if(!full.StartsWith(folder+System.IO.Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)||entry.FullName.Contains(':'))throw new IOException("잘못된 편집 파일 경로");Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);entry.ExtractToFile(full,false);}},lifetime.Token);
+        await Task.Run(()=>{foreach(var entry in zip.Entries){lifetime.Token.ThrowIfCancellationRequested();var full=System.IO.Path.GetFullPath(System.IO.Path.Combine(folder,entry.FullName));if(!full.StartsWith(folder+System.IO.Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)||entry.FullName.Contains(':'))throw new IOException("잘못된 편집 파일 경로");Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);entry.ExtractToFile(full,false);}},lifetime.Token);
         var loaded=JsonSerializer.Deserialize<PdfEditPlan>(await File.ReadAllTextAsync(System.IO.Path.Combine(folder,"plan.json")),ProjectJson)??throw new IOException("잘못된 편집 파일");var pdf=System.IO.Path.Combine(folder,"source.pdf");var inspected=await PdfEditService.InspectAsync(pdf,work,lifetime.Token);
         if(loaded.FormatVersion!=1 || loaded.SourceSha256!=inspected.SourceSha256 || loaded.Pages.Count==0 || loaded.Pages.Select(x=>x.SourceIndex).Distinct().Count()!=loaded.Pages.Count || loaded.Pages.Any(x=>x.SourceIndex<0||x.SourceIndex>=inspected.Pages.Length||x.Rotation%90!=0) || loaded.Pages.Sum(x=>x.Elements.Count)>5000)throw new IOException("편집 파일 검증 실패");
         var all=loaded.Pages.SelectMany(x=>x.Elements).ToArray();if(all.Select(x=>x.Id).Distinct().Count()!=all.Length)throw new IOException("중복 편집 항목");

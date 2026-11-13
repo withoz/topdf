@@ -46,6 +46,12 @@ public partial class PdfEditorView
 
     void DocumentMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (spreadMove != null && e.ChangedButton == MouseButton.Left)
+        {
+            FinishSpreadMove(false, e.GetPosition(SpreadPages));
+            e.Handled = true;
+            return;
+        }
         if (documentPan == null || e.ChangedButton != MouseButton.Middle) return;
         StopDocumentPan();
         e.Handled = true;

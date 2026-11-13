@@ -48,6 +48,9 @@ public static class LocalAiHost
                 catch (HttpRequestException) { }
                 await Task.Delay(300, timeout.Token);
             }
+        } catch (OperationCanceledException ex) when (!cancellation.IsCancellationRequested) {
+            Stop();
+            throw new TimeoutException("로컬 AI 엔진이 시작 시간 안에 응답하지 않았습니다. TOPDF와 로컬 AI 엔진 사이의 연결을 확인해 주세요.", ex);
         } catch { Stop(); throw; }
         finally { Gate.Release(); }
     }

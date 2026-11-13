@@ -9,6 +9,7 @@ public sealed record PdfEditPageInfo(int SourceIndex, double Width, double Heigh
     public PdfPageNote[] Notes { get; init; } = [];
 }
 public sealed record PdfPageNote(string Text,string Author);
+public sealed record PdfNoteRegion(int SourceIndex, double X, double Y, double Width, double Height);
 public sealed record PdfEditInfo(string SourceSha256, PdfEditPageInfo[] Pages);
 public sealed record PdfSourceText(string Id, string Text, double X, double Y, double Width, double Height, double EditX, double EditY, double EditWidth, double EditHeight, double FontSize, string Color, int Rotation, double BaselineX=0, double BaselineY=0, string FontFamily="Malgun Gothic", double[][]? CaretStops=null, double TextStrokeWidth=0, int TextRenderMode=0);
 public sealed class PdfEditElement
@@ -16,6 +17,7 @@ public sealed class PdfEditElement
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Kind { get; set; } = "text";
     public string Text { get; set; } = "";
+    public PdfNoteRegion? NoteRegion { get; set; }
     public string? ImagePath { get; set; }
     public double X { get; set; }
     public double Y { get; set; }
@@ -28,6 +30,7 @@ public sealed class PdfEditElement
     public bool Dashed { get; set; }
     public string? LineStyle { get; set; }
     public bool AutoWidth { get; set; }
+    public bool ManualNoteHeight { get; set; }
     public string Fill { get; set; } = "none";
     public bool FillUsesStrokeColor { get; set; }
     public double ImageOpacity { get; set; } = 1;
@@ -35,6 +38,7 @@ public sealed class PdfEditElement
     public double FillOpacity { get; set; } = 1;
     public string TextBoxFill { get; set; } = "none";
     public string TextBoxBorderColor { get; set; } = "none";
+    public string TextBoxBorderLineStyle { get; set; } = "solid";
     public double TextBoxBorderWidth { get; set; } = 1;
     public string Alignment { get; set; } = "left";
     public string FontFamily { get; set; } = "Malgun Gothic";
@@ -42,6 +46,13 @@ public sealed class PdfEditElement
     public bool PreserveSourceStyle { get; set; }
     public string? SourceTextId { get; set; }
     public string? SourceText { get; set; }
+
+    internal PdfEditElement Clone()
+    {
+        var copy = (PdfEditElement)MemberwiseClone();
+        copy.Points = Points.Select(point => (double[])point.Clone()).ToList();
+        return copy;
+    }
 }
 public sealed class PdfEditPage
 {
@@ -61,7 +72,15 @@ public sealed class PdfEditPlan
 public static partial class PdfEditService
 {
     static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-    public static PdfEditPlan Clone(PdfEditPlan plan) => JsonSerializer.Deserialize<PdfEditPlan>(JsonSerializer.Serialize(plan, Json), Json)!;
+    public static PdfEditPlan Clone(PdfEditPlan plan) => new() {
+        FormatVersion = plan.FormatVersion,
+        SourceSha256 = plan.SourceSha256,
+        Pages = plan.Pages.Select(page => new PdfEditPage {
+            SourceIndex = page.SourceIndex,
+            Rotation = page.Rotation,
+            Elements = page.Elements.Select(element => element.Clone()).ToList()
+        }).ToList()
+    };
     public static async Task<PdfEditInfo> InspectAsync(string source, string folder, CancellationToken cancellation)
     {
         var output = Path.Combine(folder, Guid.NewGuid().ToString("N")+".json");
@@ -82,6 +101,22 @@ public static partial class PdfEditService
                 ?? throw new InvalidDataException("PDF 텍스트 정보를 읽을 수 없습니다.");
         } finally { TryRemoveTemporaryFile(output); }
     }
+    internal static async Task<string> ReadRegionTextAsync(string source, string folder, int page, int rotation,
+        System.Windows.Rect bounds, CancellationToken cancellation)
+    {
+        var output = Path.Combine(folder, Guid.NewGuid() + ".txt");
+        var values = new[] { bounds.X, bounds.Y, bounds.Width, bounds.Height }
+            .Select(value => value.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+        try {
+            await RunAsync(["region-text", source, output, "--page", page.ToString(), "--rotation", rotation.ToString(), "--bounds", .. values], cancellation);
+            return await File.ReadAllTextAsync(output, cancellation);
+        } finally { TryRemoveTemporaryFile(output); }
+    }
+
+    internal static Task<string> RenderRegionAsync(string source, string folder, int page, int rotation,
+        (double Pixels, System.Windows.Rect Bounds) region, CancellationToken cancellation) =>
+        RenderCoreAsync(source, folder, page, rotation, cancellation, null, 1800, region, null);
+
     public static Task<string> RenderAsync(string source, string folder, int page, int rotation, CancellationToken cancellation, PdfEditPlan? plan = null, int maxSize=1800) =>
         RenderCoreAsync(source,folder,page,rotation,cancellation,plan,maxSize,null,null);
 

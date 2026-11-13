@@ -7,6 +7,7 @@ import math
 import re
 import sys
 from pathlib import Path
+from contextlib import closing
 from xml.sax.saxutils import escape
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -19,6 +20,9 @@ import pypdfium2 as pdfium
 
 MAX_EDIT_SOURCE_BYTES = 200_000_000
 
+
+LINE_DASH_PATTERNS = {'solid': [], 'dotted': [1, 2], 'dashed': [4, 3],
+                      'dashdot': [8, 3, 1, 3], 'dashdotdot': [8, 3, 1, 3, 1, 3]}
 
 def source_hash(path):
     with path.open('rb') as stream: return hashlib.file_digest(stream, 'sha256').hexdigest()
@@ -117,6 +121,33 @@ def scalar(value):
     return number
 
 
+def draw_note_region(canvas, element, height, source_index, local=True):
+    region = element.get('noteRegion')
+    if element['kind'] != 'note' or not region or region['sourceIndex'] != source_index:
+        return
+    x, y, w, h = (scalar(region[key]) for key in ('x', 'y', 'width', 'height'))
+    if min(w, h) <= 0:
+        return
+    nx = scalar(element['x']) + scalar(element['width'])/2
+    ny = scalar(element['y']) + scalar(element['height'])/2
+    canvas.saveState()
+    canvas.setStrokeColorRGB(1, 140/255, 0)
+    canvas.setLineWidth(1.5)
+    canvas.setDash(6, 4.5)
+    canvas.rect(x, height-y-h, w, h)
+    if local:
+        half_w = scalar(element['width'])/2
+        half_h = scalar(element['height'])/2
+        angle = math.radians(int(element.get('rotation', 0)))
+        c, s = math.cos(angle), math.sin(angle)
+        starts = ((x, y), (x+w, y), (x, y+h), (x+w, y+h))
+        ends = [(nx+dx*c-dy*s, ny+dx*s+dy*c)
+                for dy in (-half_h, half_h) for dx in (-half_w, half_w)]
+        start, end = min(((a, b) for a in starts for b in ends), key=lambda pair: math.dist(*pair))
+        canvas.line(start[0], height-start[1], end[0], height-end[1])
+    canvas.restoreState()
+
+
 def draw_element(canvas, element, width, height, font):
     from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle
@@ -146,7 +177,7 @@ def draw_element(canvas, element, width, height, font):
             canvas.setStrokeColor(colors.HexColor(color)); canvas.setLineWidth(stroke)
             canvas.setFillColor(colors.HexColor(fill if fill != 'none' else color))
             line_style = element.get('lineStyle') or ('dashed' if element.get('dashed') else 'solid')
-            patterns = {'solid': [], 'dotted': [1,2], 'dashed': [4,3], 'dashdot': [8,3,1,3], 'dashdotdot': [8,3,1,3,1,3]}
+            patterns = LINE_DASH_PATTERNS
             if not isinstance(line_style, str) or line_style not in patterns: raise ValueError('잘못된 선종류')
             canvas.setDash([stroke*v for v in patterns[line_style]])
             # Continuous line vertices are already stored as exact endpoints.
@@ -194,7 +225,7 @@ def draw_element(canvas, element, width, height, font):
             if not 6 <= size <= 96: raise ValueError('글자 크기는 6~96으로 지정하세요.')
             color = element.get('color', '#111111')
             if not re.fullmatch(r'#[0-9a-fA-F]{6}', color): raise ValueError('잘못된 글자 색상입니다.')
-            pad = 7 if kind == 'note' else 1
+            pad = 3 if kind == 'note' else 1
             if kind == 'note':
                 canvas.setFillColor(colors.HexColor('#FFF3AF')); canvas.setStrokeColor(colors.HexColor('#D6BB55'))
                 canvas.roundRect(0, 0, w, h, 4, fill=1, stroke=1)
@@ -215,15 +246,22 @@ def draw_element(canvas, element, width, height, font):
                     stroke = scalar(element.get('textBoxBorderWidth', 1))
                     if not .5 <= stroke <= 8: raise ValueError('잘못된 글상자 테두리 두께입니다.')
                     stroke = min(stroke, w, h)
+                    border_style = element.get('textBoxBorderLineStyle', 'solid')
+                    if not isinstance(border_style, str) or border_style not in LINE_DASH_PATTERNS:
+                        raise ValueError('잘못된 글상자 테두리 선 종류입니다.')
+                    canvas.saveState()
+                    canvas.setDash([stroke * part for part in LINE_DASH_PATTERNS[border_style]])
                     canvas.setStrokeColor(colors.HexColor(border))
                     canvas.setLineWidth(stroke)
                     canvas.rect(stroke/2, stroke/2, w-stroke, h-stroke, fill=0, stroke=1)
+                    canvas.restoreState()
             selected_font = {'Malgun Gothic': font, 'Gulim': 'TOPDF-Gulim', 'Batang': 'TOPDF-Batang'}.get(element.get('fontFamily', 'Malgun Gothic'), font)
             style = ParagraphStyle('TOPDF', alignment={'left':0,'center':1,'right':2}.get(element.get('alignment','left'),0), fontName=selected_font, fontSize=size, leading=size*1.35, textColor=colors.HexColor(color), wordWrap='CJK')
             paragraph = Paragraph(escape(text).replace('\n', '<br/>'), style)
             _, needed = paragraph.wrap(w-pad*2, max(1, h-pad*2))
             if needed > h-pad*2+.5: raise ValueError('글자가 영역을 벗어납니다. 항목을 키우거나 글자 크기·내용을 줄여 주세요.')
-            paragraph.drawOn(canvas, pad, h-pad-needed)
+            text_bottom = (h-needed)/2 if kind == 'text' else h-pad-needed
+            paragraph.drawOn(canvas, pad, text_bottom)
         else: raise ValueError('지원하지 않는 편집 항목입니다.')
     finally: canvas.restoreState()
 
@@ -264,6 +302,12 @@ def export_pages(path, reader, plan_path, target):
             if any(e.get('fontFamily')==name for p in pages for e in p.get('elements', [])):
                 pdfmetrics.registerFont(TTFont('TOPDF-'+name, str(font_path.parent/filename) if (font_path.parent/filename).is_file() else str(font_path), subfontIndex=0))
     writer = PdfWriter(); writer.append(reader, pages=indices, import_outline=True)
+    regions = {}
+    for specification in pages:
+        for element in specification.get('elements', []):
+            if element['kind'] == 'note' and element.get('noteRegion'):
+                origin = element['noteRegion']['sourceIndex']
+                regions.setdefault(origin, []).append((element, origin == specification['sourceIndex']))
     overlays = []  # Keep reader identities/streams alive until pypdf finishes cloning resources.
     for position, specification in enumerate(pages):
         rotation = int(specification.get('rotation', 0))
@@ -284,7 +328,8 @@ def export_pages(path, reader, plan_path, target):
         width, height, matrix = geometry(page, rotation)
         if rotation: page.rotate(rotation)
         elements = [e for e in specification.get('elements', []) if not(e['kind']=='replace' and e.get('preserveSourceStyle'))]
-        if elements:
+        page_regions = regions.get(specification['sourceIndex'], [])
+        if elements or page_regions:
             # Real PDFs can share content/resources between distinct pages. Isolate
             # the container before merging so overlays cannot leak into other pages.
             content = page.get_contents()
@@ -301,6 +346,8 @@ def export_pages(path, reader, plan_path, target):
                 else: resources[key] = value
             page[NameObject('/Resources')] = resources
             stream = io.BytesIO(); canvas = Canvas(stream, pagesize=(width, height), pageCompression=1)
+            for element, local in page_regions:
+                draw_note_region(canvas, element, height, specification['sourceIndex'], local)
             for element in elements:
                 draw_element(canvas, element, width, height, font)
                 if element['kind'] == 'note':
@@ -336,18 +383,35 @@ def append_pages(source, extra, target):
         open_source(target, output)
 
 
+def region_text(source, index, rotation, bounds):
+    x, y, w, h = bounds
+    with source.open('rb') as stream:
+        reader = open_source(source, stream)
+        width, height, (a,b,c,d,e,f) = geometry(reader.pages[index], rotation)
+        corners = [(a*px+c*py+e, b*px+d*py+f)
+                   for px in (x, x+w) for py in (height-y-h, height-y)]
+        xs, ys = zip(*corners)
+        with pdfium.PdfDocument(str(source)) as document:
+            with closing(document[index]) as page:
+                with closing(page.get_textpage()) as text:
+                    return text.get_text_bounded(min(xs), min(ys), max(xs), max(ys)).strip()
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('operation', choices=['inspect', 'render', 'text', 'export', 'append'])
+    parser.add_argument('operation', choices=['inspect', 'render', 'text', 'region-text', 'export', 'append'])
     parser.add_argument('source', type=Path); parser.add_argument('output', type=Path)
     parser.add_argument('--page', type=int, default=0); parser.add_argument('--rotation', type=int, default=0)
     parser.add_argument('--plan', type=Path)
     parser.add_argument('--append', type=Path)
     parser.add_argument('--include-invisible', action='store_true')
+    parser.add_argument('--bounds', nargs=4, type=float)
     parser.add_argument('--region', nargs=5, type=float)
     parser.add_argument('--max-size',type=int,default=1800)
     args = parser.parse_args()
     if args.operation == 'inspect': args.output.write_text(json.dumps(inspect(args.source), ensure_ascii=False), encoding='utf-8')
+    elif args.operation == 'region-text':
+        args.output.write_text(region_text(args.source, args.page, args.rotation, args.bounds), encoding='utf-8')
     elif args.operation == 'text':
         from pdf_text_edit import text_layer
         with args.source.open('rb') as stream:

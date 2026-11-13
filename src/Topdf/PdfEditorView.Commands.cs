@@ -28,7 +28,7 @@ public partial class PdfEditorView
     }
     void CanExecuteEditCommand(object sender,CanExecuteRoutedEventArgs e)
     {
-        var gesture=drawing!=null||dragging!=null||cancelEditGesture!=null||selectionBox!=null;
+        var gesture=drawing!=null||dragging!=null||cancelEditGesture!=null||selectionBox!=null||spreadStroke!=null||spreadLine!=null;
         if(e.Command==ApplicationCommands.Save||e.Command==ApplicationCommands.SaveAs){e.CanExecute=info!=null&&!IsBusy&&!gesture;e.Handled=true;return;}
         if(IsTextCommandTarget(e.OriginalSource)){e.CanExecute=false;e.Handled=true;return;}
         if(IsSpreadViewing&&ViewColumns>1&&(e.Command==ApplicationCommands.Undo||e.Command==ApplicationCommands.Redo)){
@@ -36,7 +36,7 @@ public partial class PdfEditorView
             e.Handled=true;
             return;
         }
-        if(IsViewing){e.ContinueRouting=true;return;}
+        if(IsViewing&&!CanEditSpread){e.ContinueRouting=true;return;}
         var ready=info!=null&&Page!=null&&!IsBusy;
         if(e.Command==ApplicationCommands.Undo)e.CanExecute=ready&&(drawing!=null||dragging!=null||cancelEditGesture!=null||selectionBox!=null||undo.Count>0);
         else if(e.Command==ApplicationCommands.Redo)e.CanExecute=ready&&!gesture&&redo.Count>0;
@@ -54,14 +54,14 @@ public partial class PdfEditorView
             e.Handled=true;
             return;
         }
-        if(IsViewing)return;
+        if(IsViewing&&!CanEditSpread)return;
         if(e.Command==ApplicationCommands.Undo)Undo();
         else if(e.Command==ApplicationCommands.Redo)Redo();
         else if(e.Command==ApplicationCommands.Copy){ApplyInlineText();CopyObjects();}
         else if(e.Command==ApplicationCommands.Cut){ApplyInlineText();CopyObjects();DeleteElement(sender,new RoutedEventArgs());}
         else if(e.Command==ApplicationCommands.Paste){ApplyInlineText();PasteObjects();}
         else if(e.Command==ApplicationCommands.Delete){ApplyInlineText();DeleteElement(sender,new RoutedEventArgs());}
-        else if(e.Command==ApplicationCommands.SelectAll){ApplyInlineText();selectedIds.Clear();selectedIds.UnionWith(Page.Elements.Select(x=>x.Id));selectedId=selectedIds.FirstOrDefault()??"";selectedSource=null;EditTool.SelectedIndex=1;DrawElements();}
+        else if(e.Command==ApplicationCommands.SelectAll){ApplyInlineText();selectedIds.Clear();selectedIds.UnionWith(Page.Elements.Select(x=>x.Id));selectedId=selectedIds.FirstOrDefault()??"";selectedSource=null;EditTool.SelectedIndex=1;if(CanEditSpread)RefreshSpreadSelection();else DrawElements();}
         e.Handled=true;CommandManager.InvalidateRequerySuggested();
     }
     void AnnotationContextOpening(object sender,ContextMenuEventArgs e)

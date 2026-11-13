@@ -11,7 +11,7 @@ public partial class PdfEditorView
     const double MaximumZoom = 6400;
     readonly PdfViewportWorker viewportWorker = new();
     CancellationTokenSource? viewportRequest;
-    sealed record ViewportPatch(string Source, int Page, int Rotation, long Revision, double Pixels, Rect Bounds);
+    sealed record ViewportPatch(string Source, int Page, int Rotation, long Revision, double Pixels, Rect Bounds, long InlineRevision);
 
     void ClearViewportPatch()
     {
@@ -38,9 +38,10 @@ public partial class PdfEditorView
                     }
                 }
             } else if (EditingArea.IsVisible && EditSurface.IsVisible && Page is { } page) {
-                if (selectedSource != null || addedTextCommit != null) return;
+                var detailPlan = selectedSource == null ? plan : inlineDetailPlan;
+                if (detailPlan == null) return;
                 await RenderViewportAsync(EditScroll, EditDetailLayer, snapshot, page.SourceIndex,
-                    page.Rotation, renderVersion, plan, request.Token);
+                    page.Rotation, renderVersion, detailPlan, request.Token);
             }
         } catch (OperationCanceledException) { }
         catch (TimeoutException) { /* Retain the base image after a worker timeout. */ }
@@ -71,9 +72,10 @@ public partial class PdfEditorView
         var dpi = VisualTreeHelper.GetDpi(layer);
         var fullPixels = Math.Max(scale.Width * dpi.DpiScaleX, scale.Height * dpi.DpiScaleY);
         var previous = layer.Tag as ViewportPatch;
+        var inlineRevision = renderPlan != null && selectedSource != null ? inlineDetailRevision : 0;
         if (fullPixels <= 4200 || (previous != null &&
             (previous.Source != source || previous.Page != page || previous.Rotation != rotation ||
-             previous.Revision != revision || Math.Abs(previous.Pixels - fullPixels) > 1))) {
+             previous.Revision != revision || previous.InlineRevision != inlineRevision || Math.Abs(previous.Pixels - fullPixels) > 1))) {
             layer.Children.Clear();
             layer.Tag = null;
             previous = null;
@@ -89,12 +91,14 @@ public partial class PdfEditorView
         visible.Inflate(96, 96);
         visible.Intersect(scale);
         var area = Normalize(visible);
-        var patch = new ViewportPatch(source, page, rotation, revision, fullPixels, area);
+        var patch = new ViewportPatch(source, page, rotation, revision, fullPixels, area, inlineRevision);
         var file = await PdfEditService.RenderViewportAsync(source, work, page, rotation, token, renderPlan,
             (fullPixels, area), viewportWorker);
         try {
             token.ThrowIfCancellationRequested();
-            if (!layer.IsVisible || (renderPlan != null && (revision != renderVersion || selectedSource != null)) ||
+            if (!layer.IsVisible || (renderPlan != null && (revision != renderVersion ||
+                (selectedSource == null ? plan : inlineDetailPlan) != renderPlan ||
+                inlineRevision != (selectedSource == null ? 0 : inlineDetailRevision))) ||
                 (renderPlan == null && layer.DataContext is not PageTile) ||
                 (renderPlan == null && layer.DataContext is PageTile tile && (tile.Pdf != source || tile.Index != page)))
                 return;

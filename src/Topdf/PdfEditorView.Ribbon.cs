@@ -7,6 +7,8 @@ namespace Topdf;
 public partial class PdfEditorView
 {
     bool ribbonReady;
+    static readonly Brush ActiveToolBackground = new SolidColorBrush(Color.FromRgb(182, 219, 245));
+    static readonly Brush ActiveToolBorder = new SolidColorBrush(Color.FromRgb(23, 100, 156));
     void InitializeRibbon()
     {
         string[] colors=["#111111","#555555","#808080","#AAAAAA","#D4D4D4","#FFFFFF","#AF126A","#E51B23","#FF6500","#FFAB00","#FFD000","#FFF000","#A6E31C","#24CC00","#00865F","#00A8BD","#1755B5","#4A00B5","#7300C5","#620080","#F7D7C3","#BA936B","#935927","#694333","#F783F5","#FFCE8A","#FFFF85","#88FBA1","#7FD5F9","#BCABF7"];
@@ -43,14 +45,40 @@ public partial class PdfEditorView
         if(Tool!="도장"||(IsViewing&&!CanEditSpread))HideStampPreview();
         if(CanEditSpread)RefreshSpreadSelection();
         if(continuousLineKind!=null && Tool!=(continuousLineKind=="arrow"?"화살표":"선"))StopContinuousLine();
-        var showActiveTool=!IsViewing||(IsSpreadViewing&&ViewColumns>1);
-        foreach(var tool in RibbonButtons)tool.IsChecked=int.TryParse(tool.Tag?.ToString(),out var index)&&index==(showActiveTool ? EditTool.SelectedIndex : -1);
         if(TextProperties!=null)TextProperties.Visibility=!IsViewing && EditTool.SelectedIndex is 0 or 2 or 3 ? Visibility.Visible : Visibility.Collapsed;
-        var active=new SolidColorBrush(Color.FromRgb(221,239,250));
-        if(TextToolsButton!=null)TextToolsButton.Background=!IsViewing && EditTool.SelectedIndex is 0 or 2 ? active : Brushes.White;
-        if(DrawingToolsButton!=null)DrawingToolsButton.Background=showActiveTool && EditTool.SelectedIndex is 5 or 6 or 7 or 8 or 12 ? active : Brushes.White;
-        if(MarkupToolsButton!=null)MarkupToolsButton.Background=showActiveTool && EditTool.SelectedIndex is 3 or 9 or 10 or 11 ? active : Brushes.White;
+        RefreshActiveRibbonTool();
         if(EditCanvas!=null){RefreshObjectTools();RefreshObjectProperties();RefreshSelectionDecorations();if(info!=null)RefreshTextAvailability();}
+    }
+    void RegionToolStateChanged(object sender, RoutedEventArgs e) => RefreshActiveRibbonTool();
+
+    void RefreshActiveRibbonTool()
+    {
+        if (!ribbonReady) return;
+        var regionActive = RegionTool.IsChecked == true;
+        var active = !regionActive && (!IsViewing || CanEditSpread) ? EditTool.SelectedIndex : -1;
+        foreach (var tool in RibbonButtons)
+            tool.IsChecked = int.TryParse(tool.Tag?.ToString(), out var index) && index == active;
+        SetActiveRibbonButton(TextToolsButton, active is 0 or 2, "글자");
+        SetActiveRibbonButton(DrawingToolsButton, active is 5 or 6 or 7 or 8 or 12, "그리기");
+        SetActiveRibbonButton(MarkupToolsButton, active is 9 or 10 or 11, "표시");
+        SetActiveRibbonButton(RegionTool, regionActive, "드래그해서 PDF 영역 선택");
+    }
+
+    void SetActiveRibbonButton(System.Windows.Controls.Primitives.ToggleButton button, bool active, string label)
+    {
+        if (active)
+        {
+            button.Background = ActiveToolBackground;
+            button.BorderBrush = ActiveToolBorder;
+            button.BorderThickness = new Thickness(2);
+        }
+        else
+        {
+            button.ClearValue(BackgroundProperty);
+            button.ClearValue(BorderBrushProperty);
+            button.ClearValue(BorderThicknessProperty);
+        }
+        button.ToolTip = active ? $"활성 도구 · {(button == RegionTool ? "영역" : Tool)}" : label;
     }
     bool syncingPalette;
     void RefreshPenColor()

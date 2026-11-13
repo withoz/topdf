@@ -10,10 +10,13 @@ public partial class PdfEditorView
     string inlineExactText="";
     Point[]? inlineLiveStops;
     CancellationTokenSource? inlineBackground;
+    PdfEditPlan? inlineCleanPlan, inlineExactPlan, inlineDetailPlan;
+    long inlineDetailRevision;
     void UpdateInlineBasePage(ImageSource image)
     {
         if(inlineText==null||selectedSource==null)return;
         inlineExactPage=image;
+        inlineExactPlan=plan;
         inlineExactText=Page?.Elements.FirstOrDefault(x=>x.SourceTextId==selectedSource.Id)?.Text??selectedSource.Text;
         RestartCleanPage(selectedSource);
         if(inlineText.Text==inlineExactText)DrawLiveText();
@@ -21,7 +24,8 @@ public partial class PdfEditorView
     }
     void BeginLiveText(PdfSourceText source)
     {
-        ClearViewportPatch();
+        inlineCleanPlan=null;
+        inlineExactPlan=inlineDetailPlan=plan;
         inlineCleanPage=null;inlineExactPage=EditPageImage.Source;inlineLiveStops=null;inlineExactText=inlineText?.Text??"";
         inlineLiveInk=new Image {IsHitTestVisible=false,Width=EditCanvas.Width,Height=EditCanvas.Height,Stretch=Stretch.Fill};
         EditCanvas.Children.Add(inlineLiveInk);
@@ -44,13 +48,13 @@ public partial class PdfEditorView
             page.Elements.RemoveAll(x=>x.SourceTextId==source.Id);page.Elements.Add(blank);
             var image=await PdfEditService.RenderAsync(snapshot,work,page.SourceIndex,page.Rotation,token,copy);
             if(token.IsCancellationRequested||version!=renderVersion||!ReferenceEquals(inlineText,input)||selectedSource?.Id!=source.Id)return;
-            inlineCleanPage=LoadImage(image);DrawLiveText();
+            inlineCleanPlan=copy;inlineCleanPage=LoadImage(image);DrawLiveText();
         }catch(OperationCanceledException){}catch(Exception ex){if(!token.IsCancellationRequested){EditStatus.Visibility=Visibility.Visible;EditStatus.Text=ex.Message;}}
     }
     void DrawLiveText()
     {
         if(inlineText==null||selectedSource==null||inlineLiveInk==null)return;
-        if(inlineText.Text==inlineExactText){inlineLiveInk.Source=null;inlineLiveStops=null;if(inlineExactPage!=null)EditPageImage.Source=inlineExactPage;DrawPdfCarets();return;}
+        if(inlineText.Text==inlineExactText){inlineLiveInk.Source=null;inlineLiveStops=null;if(inlineExactPage!=null)EditPageImage.Source=inlineExactPage;UseInlineDetailPlan(inlineExactPlan);DrawPdfCarets();return;}
         if(inlineCleanPage==null)return;
         var source=DisplayText(selectedSource);var original=selectedSource.CaretStops;
         if(original is not {Length:>1})return;
@@ -89,7 +93,7 @@ public partial class PdfEditorView
             stops.Add(text.Length==selectedSource.Text.Length?positions[^1]:cursor);
             dc.DrawRectangle(Brushes.Transparent,null,new Rect(0,0,EditCanvas.Width,EditCanvas.Height));
         }
-        inlineLiveStops=stops.ToArray();var image=new DrawingImage(drawing);image.Freeze();inlineLiveInk.Source=image;EditPageImage.Source=inlineCleanPage;DrawPdfCarets();
+        inlineLiveStops=stops.ToArray();var image=new DrawingImage(drawing);image.Freeze();inlineLiveInk.Source=image;EditPageImage.Source=inlineCleanPage;UseInlineDetailPlan(inlineCleanPlan);DrawPdfCarets();
     }
     void KeepVisibleInlineDraft(bool preserveSourceStyle)
     {
@@ -104,8 +108,19 @@ public partial class PdfEditorView
         }
         var image=new DrawingImage(combined);image.Freeze();EditPageImage.Source=image;
     }
-    void AcceptExactInlinePreview(string text,ImageSource image)
+    void UseInlineDetailPlan(PdfEditPlan? detailPlan)
     {
+        if (ReferenceEquals(inlineDetailPlan, detailPlan)) return;
+        inlineDetailPlan=detailPlan;
+        inlineDetailRevision++;
+        ClearViewportPatch();
+        ScheduleViewportRender();
+    }
+
+    void AcceptExactInlinePreview(string text,ImageSource image,PdfEditPlan? detailPlan)
+    {
+        inlineExactPlan=detailPlan;
+        UseInlineDetailPlan(detailPlan);
         inlineExactPage=image;inlineExactText=text;inlineLiveStops=null;if(inlineLiveInk!=null)inlineLiveInk.Source=null;
     }
 }

@@ -186,9 +186,45 @@ def ocr(pdf, target, engine):
     return dict(pages=len(reader.pages), processedPages=changed)
 
 
+def ocr_image(image, engine):
+    import ctypes as c
+    engine = engine.resolve()
+    def api(lib, name, result, *args):
+        fn = getattr(lib, name); fn.restype = result; fn.argtypes = list(args); return fn
+    from PIL import Image
+    with Image.open(image) as original:
+        rgb = original.convert('RGB')
+        width, height = rgb.size
+        pixels = rgb.tobytes()
+    with os.add_dll_directory(str(engine)):
+        tess = c.CDLL(str(engine/'tesseract50.dll'))
+        create = api(tess, 'TessBaseAPICreate', c.c_void_p)
+        destroy = api(tess, 'TessBaseAPIDelete', None, c.c_void_p)
+        init = api(tess, 'TessBaseAPIInit3', c.c_int, c.c_void_p, c.c_char_p, c.c_char_p)
+        set_image = api(tess, 'TessBaseAPISetImage', None, c.c_void_p, c.c_char_p, c.c_int, c.c_int, c.c_int, c.c_int)
+        set_dpi = api(tess, 'TessBaseAPISetSourceResolution', None, c.c_void_p, c.c_int)
+        get_text = api(tess, 'TessBaseAPIGetUTF8Text', c.c_void_p, c.c_void_p)
+        free = api(tess, 'TessDeleteText', None, c.c_void_p)
+        handle = create()
+        if not handle: raise RuntimeError('OCR 초기화 실패')
+        previous = Path.cwd()
+        try:
+            os.chdir(engine)
+            if init(handle, b'tessdata', b'kor+eng') != 0: raise RuntimeError('한국어·영어 OCR 언어 모델 초기화 실패')
+            set_image(handle, pixels, width, height, 3, width*3)
+            set_dpi(handle, 300)
+            result = get_text(handle)
+            if not result: raise RuntimeError('OCR 처리 실패')
+            try: return c.string_at(result).decode('utf-8').strip()
+            finally: free(result)
+        finally:
+            destroy(handle)
+            os.chdir(previous)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('operation', choices=['analyze', 'ocr'])
+    parser.add_argument('operation', choices=['analyze', 'ocr', 'ocr-image'])
     parser.add_argument('source', type=Path)
     parser.add_argument('pdf', type=Path)
     parser.add_argument('output', type=Path)
@@ -197,6 +233,8 @@ def main():
     if args.operation == 'analyze':
         result = analyze(args.source, args.pdf)
         args.output.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
+    elif args.operation == 'ocr-image':
+        args.output.write_text(ocr_image(args.source, args.engine), encoding='utf-8')
     else:
         result = ocr(args.pdf, args.output, args.engine)
         print(json.dumps(result))

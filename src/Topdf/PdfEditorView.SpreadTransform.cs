@@ -11,6 +11,71 @@ public partial class PdfEditorView
     sealed record SpreadMove(Grid Host,Canvas Overlay,Point Start,History Before,
         List<PdfEditElement> Items,PdfEditElement[] Originals);
     SpreadMove? spreadMove;
+    Canvas? spreadMovePreviewPage;
+    readonly List<(FrameworkElement Visual, double Opacity)> hiddenSpreadMoveVisuals = [];
+    readonly List<(FrameworkElement Source, PdfEditElement Original, FrameworkElement Preview)> spreadMovePreviews = [];
+
+    bool PreviewSpreadMove(SpreadMove move, Point point)
+    {
+        var target = SpreadDropTarget(move, point);
+        if (target is not { } drop || drop.Offset is not Vector offset)
+        {
+            ClearSpreadMovePreview();
+            return false;
+        }
+
+        if (spreadMovePreviewPage != drop.Overlay || spreadMovePreviews.Any(pair =>
+            !drop.Overlay.Children.Contains(pair.Preview) || !move.Overlay.Children.Contains(pair.Source)))
+        {
+            ClearSpreadMovePreview();
+            spreadMovePreviewPage = drop.Overlay;
+            for (var i = 0; i < move.Items.Count; i++)
+            {
+                var item = move.Items[i];
+                var source = move.Overlay.Children.OfType<FrameworkElement>()
+                    .FirstOrDefault(visual => visual is not System.Windows.Shapes.Path && ReferenceEquals(visual.Tag, item));
+                if (source == null) continue;
+                if(CreateSpreadObjectVisual(item) is not {} preview)continue;
+                PlaceSpreadVisual(drop.Overlay,preview,item);
+                preview.Tag=null;
+                preview.Opacity*=.86;
+                spreadMovePreviews.Add((source, move.Originals[i], preview));
+                UpdateNoteRegionVisual(move.Overlay, item, outlineOnly: true);
+            }
+        }
+
+        foreach(var visual in move.Overlay.Children.OfType<FrameworkElement>())
+        {
+            var isMovedObject = visual is not System.Windows.Shapes.Path &&
+                visual.Tag is PdfEditElement item && move.Items.Contains(item);
+            var isHandle = visual is Thumb || Equals(visual.Tag,"spread-rotation-guide");
+            if((isMovedObject || isHandle) && !hiddenSpreadMoveVisuals.Any(entry=>entry.Visual==visual))
+            {
+                hiddenSpreadMoveVisuals.Add((visual,visual.Opacity));
+                visual.Opacity=0;
+            }
+        }
+
+        foreach (var (_, item, preview) in spreadMovePreviews)
+        {
+            preview.RenderTransform = new RotateTransform(item.Rotation);
+            Canvas.SetLeft(preview, item.X + offset.X);
+            Canvas.SetTop(preview, item.Y + offset.Y);
+        }
+        return true;
+    }
+
+    void ClearSpreadMovePreview()
+    {
+        foreach (var (_, _, preview) in spreadMovePreviews)
+            spreadMovePreviewPage?.Children.Remove(preview);
+        spreadMovePreviews.Clear();
+        if (spreadMove is { } move)
+            foreach (var item in move.Items) UpdateNoteRegionVisual(move.Overlay, item);
+        foreach(var (visual, opacity) in hiddenSpreadMoveVisuals)visual.Opacity=opacity;
+        hiddenSpreadMoveVisuals.Clear();
+        spreadMovePreviewPage = null;
+    }
 
     PdfEditElement[] SpreadOriginals(History history,List<PdfEditElement> items) =>
         items.Select(item=>history.Plan.Pages[history.Page].Elements.Single(old=>old.Id==item.Id)).ToArray();
@@ -42,14 +107,77 @@ public partial class PdfEditorView
         UpdateSpreadTransformPreview(move.Overlay);
     }
 
-    void FinishSpreadMove(bool canceled)
+    void FinishSpreadMove(bool canceled, Point? dropPoint = null)
     {
         var move=spreadMove;
         if(move==null)return;
         spreadMove=null;
+        ClearSpreadMovePreview();
         cancelEditGesture=null;
         if(move.Host.IsMouseCaptured)move.Host.ReleaseMouseCapture();
+        if(!canceled && dropPoint is Point point && TryDropOnAnotherSpreadPage(move,point))return;
         _=CompleteSpreadTransformAsync(move.Before,move.Items,move.Originals,canceled);
+    }
+
+    static Grid? FindSpreadDropSurface(UIElement parent, Point point)
+    {
+        if (parent is Grid { Name: "SpreadPageSurface", DataContext: PageTile } host)
+            return new Rect(host.RenderSize).Contains(point) ? host : null;
+        for (var index = VisualTreeHelper.GetChildrenCount(parent)-1; index >= 0; index--)
+        {
+            if (VisualTreeHelper.GetChild(parent,index) is not UIElement { IsVisible: true } child) continue;
+            var childPoint = parent.TranslatePoint(point, child);
+            if (FindSpreadDropSurface(child, childPoint) is {} surface) return surface;
+        }
+        return null;
+    }
+
+    (PageTile Tile, Canvas Overlay, Vector? Offset)? SpreadDropTarget(SpreadMove move, Point point)
+    {
+        if(!CanEditSpread || IsBusy || move.Items.Any(item=>item.Kind=="replace"))return null;
+        var host=FindSpreadDropSurface(SpreadPages,point);
+        if(host?.DataContext is not PageTile tile || tile.Index==move.Before.Page ||
+            tile.Index<0 || tile.Index>=plan.Pages.Count ||
+            host.Children.OfType<Viewbox>().FirstOrDefault()?.Child is not Canvas overlay ||
+            host.ActualWidth<=0 || host.ActualHeight<=0 || overlay.Width<=0 || overlay.Height<=0)return null;
+        var local=SpreadPages.TranslatePoint(point,host);
+        var pointer=new Point(local.X/host.ActualWidth*overlay.Width,local.Y/host.ActualHeight*overlay.Height);
+        var bounds=SelectionBounds(move.Originals);
+        if(bounds.Width>overlay.Width || bounds.Height>overlay.Height)
+            return (tile, overlay, null);
+        var delta=pointer-move.Start;
+        return (tile, overlay, new Vector(
+            Math.Clamp(delta.X,-bounds.Left,overlay.Width-bounds.Right),
+            Math.Clamp(delta.Y,-bounds.Top,overlay.Height-bounds.Bottom)));
+    }
+
+    bool TryDropOnAnotherSpreadPage(SpreadMove move, Point point)
+    {
+        if(SpreadDropTarget(move,point) is not { } drop)return false;
+        if(drop.Offset is not Vector offset){
+            _=CompleteSpreadTransformAsync(move.Before,move.Items,move.Originals,true);
+            ShowPageOperationError("선택한 객체가 대상 페이지보다 큽니다.");
+            return true;
+        }
+        var (tile, overlay, _) = drop;
+        var source=plan.Pages[move.Before.Page];
+        var target=plan.Pages[tile.Index];
+        for(var i=0;i<move.Items.Count;i++){
+            var item=move.Items[i];
+            source.Elements.Remove(item);
+            item.X=move.Originals[i].X+offset.X;
+            item.Y=move.Originals[i].Y+offset.Y;
+            target.Elements.Add(item);
+        }
+        updating=true;
+        try{EditPages.SelectedIndex=tile.Index;}
+        finally{updating=false;}
+        EditPageNumber.Text=(tile.Index+1).ToString();
+        Commit(move.Before,keepSpread:true);
+        RefreshSpreadGraphics(move.Overlay,new RoutedEventArgs());
+        RefreshSpreadGraphics(overlay,new RoutedEventArgs());
+        _=RefreshSpreadAfterTransformAsync(move.Items);
+        return true;
     }
 
     void AddSpreadResizeHandle(Canvas overlay,List<PdfEditElement> items)
@@ -103,7 +231,11 @@ public partial class PdfEditorView
         var items=Objects();
         foreach(var outline in overlay.Children.OfType<FrameworkElement>().ToArray()){
             if(outline.Tag is not PdfEditElement item)continue;
-            if(outline is Canvas && item.Kind=="highlight" && outline.Width!=item.Width){
+            if(outline is System.Windows.Shapes.Path && item.NoteRegion != null){
+                UpdateNoteRegionVisual(overlay,item);
+                continue;
+            }
+            if(outline is Canvas && Graphics.Contains(item.Kind) && (outline.Width!=item.Width || outline.Height!=item.Height)){
                 PlaceSpreadVisual(overlay,CreateGraphicVisual(item),item,overlay.Children.IndexOf(outline));
                 continue;
             }
@@ -125,7 +257,8 @@ public partial class PdfEditorView
     static bool SpreadTransformChanged(List<PdfEditElement> items,PdfEditElement[] originals) =>
         items.Zip(originals).Any(pair=>pair.First.X!=pair.Second.X||pair.First.Y!=pair.Second.Y||
             pair.First.Width!=pair.Second.Width||pair.First.Height!=pair.Second.Height||
-            pair.First.FontSize!=pair.Second.FontSize||pair.First.AutoWidth!=pair.Second.AutoWidth);
+            pair.First.FontSize!=pair.Second.FontSize||pair.First.AutoWidth!=pair.Second.AutoWidth||
+            pair.First.ManualNoteHeight!=pair.Second.ManualNoteHeight);
 
     async Task CompleteSpreadTransformAsync(History before,List<PdfEditElement> items,PdfEditElement[] originals,bool canceled)
     {
@@ -137,6 +270,7 @@ public partial class PdfEditorView
                 items[i].Height=originals[i].Height;
                 items[i].FontSize=originals[i].FontSize;
                 items[i].AutoWidth=originals[i].AutoWidth;
+                items[i].ManualNoteHeight=originals[i].ManualNoteHeight;
             }
             RefreshSpreadSelection();
         }else if(SpreadTransformChanged(items,originals)){
@@ -148,10 +282,15 @@ public partial class PdfEditorView
 
     async Task RefreshSpreadAfterTransformAsync(List<PdfEditElement> items)
     {
-        if(items.Any(item=>bakedSpreadGraphics.Contains(item.Id)||item.Kind is "text" or "note" or "replace")){
+        if(items.Any(item=>bakedSpreadGraphics.Contains(item.Id)||item.Kind=="replace")){
             await UpdateViewingAsync(true,true);
         }else{
-            RefreshSpreadSelection();
+            RefreshCurrentSpreadPage();
+            foreach (var source in items.Select(item => item.NoteRegion?.SourceIndex).OfType<int>().Distinct())
+            {
+                var index = plan.Pages.FindIndex(page => page.SourceIndex == source);
+                if (index >= 0 && index != EditPages.SelectedIndex) RefreshSpreadPage(SpreadPages, index);
+            }
             RefreshObjectProperties();
         }
     }

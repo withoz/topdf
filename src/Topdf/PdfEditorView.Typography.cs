@@ -99,7 +99,7 @@ public partial class PdfEditorView
                 finally {File.Delete(exported);}
             }
             if(token.IsCancellationRequested||version!=renderVersion||selectedSource?.Id!=source.Id||!ReferenceEquals(inlineText,input)||input.Text!=text)return;
-            var exact=LoadImage(image);AcceptExactInlinePreview(text,exact);
+            var exact=LoadImage(image);AcceptExactInlinePreview(text,exact,layout.PreserveSourceStyle?copy:null);
             EditPageImage.Source=exact;
             await UpdatePdfCaretsAsync(image,text,source.Id,token);
         } catch(OperationCanceledException){} catch(Exception ex){if(!token.IsCancellationRequested){EditStatus.Visibility=Visibility.Visible;EditStatus.Text=ex.Message;}}

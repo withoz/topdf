@@ -42,7 +42,18 @@ public partial class PdfEditorView
     }
     void SelectAnnotationAtPointer(object sender,MouseButtonEventArgs e)
     {
-        if(IsViewing||saving||Page==null||Tool is not ("선택" or "본문" or "메모"))return;
+        if (inlineText is { } input && !IsViewing && !saving)
+        {
+            var point = e.GetPosition(input);
+            if (!new Rect(input.RenderSize).Contains(point))
+            {
+                ApplyInlineText();
+                Keyboard.Focus(EditCanvas);
+                e.Handled = true;
+                return;
+            }
+        }
+        if(RegionTool.IsChecked==true||IsViewing||saving||Page==null||Tool is not ("선택" or "본문" or "메모"))return;
         for(var node=e.OriginalSource as DependencyObject;node!=null&&node!=EditCanvas;node=node is Visual?VisualTreeHelper.GetParent(node):LogicalTreeHelper.GetParent(node))
             if(node is Thumb or ButtonBase||node is TextBoxBase&&!Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))return;
         SelectHitAnnotation(e.GetPosition(EditCanvas),Keyboard.Modifiers.HasFlag(ModifierKeys.Alt),e);

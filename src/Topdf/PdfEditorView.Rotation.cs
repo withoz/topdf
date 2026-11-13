@@ -28,9 +28,11 @@ public partial class PdfEditorView
         Point pivot=new();
         double initialAngle=0;
         bool changed=false;
+        bool editingText=false;
         Action? cancel=null;
         handle.DragStarted+=(_,_)=>{
-            Keyboard.Focus(EditCanvas);
+            editingText=addedTextInput is { } input && EditCanvas.Children.Contains(input) && items.Count==1 && ReferenceEquals(input.Tag,items[0]);
+            if(!editingText)Keyboard.Focus(EditCanvas);
             before=Capture();
             var ids=items.Select(x=>x.Id).ToHashSet();
             originals=before.Plan.Pages[before.Page].Elements.Where(x=>ids.Contains(x.Id)).ToArray();
@@ -41,7 +43,7 @@ public partial class PdfEditorView
             cancel=()=>{
                 var snapshot=before;before=null;
                 handle.CancelDrag();
-                if(snapshot!=null){Restore(snapshot);SetDirty(!IsClean());}
+                if(snapshot!=null)CancelRotation(snapshot);
             };
             cancelEditGesture=cancel;
             CommandManager.InvalidateRequerySuggested();
@@ -60,11 +62,24 @@ public partial class PdfEditorView
             if(ReferenceEquals(cancelEditGesture,cancel))cancelEditGesture=null;
             var snapshot=before;before=null;
             if(snapshot==null)return;
-            if(e.Canceled){Restore(snapshot);SetDirty(!IsClean());}
-            else if(changed)Commit(snapshot);
-            else DrawElements();
+            if(e.Canceled)CancelRotation(snapshot);
+            else if(!editingText){
+                if(changed)Commit(snapshot);
+                else DrawElements();
+            }
             CommandManager.InvalidateRequerySuggested();
         };
+        void CancelRotation(History snapshot)
+        {
+            if(editingText){
+                RotateSelectionFrom(items,originals,pivot,0);
+                RefreshRotatedObjects(items);
+                PlaceRotationHandle(handle,items);
+            }else{
+                Restore(snapshot);
+                SetDirty(!IsClean());
+            }
+        }
         return handle;
     }
 
@@ -110,12 +125,18 @@ public partial class PdfEditorView
 
     void RefreshRotatedObjects(List<PdfEditElement> items)
     {
+        foreach(var item in items)UpdateNoteRegionVisual(EditCanvas,item);
         foreach(var border in EditCanvas.Children.OfType<AnnotationBorder>())
         {
             if(border.Tag is not PdfEditElement item||!items.Contains(item))continue;
             border.RenderTransform=new RotateTransform(item.Rotation);
             Canvas.SetLeft(border,item.X);
             Canvas.SetTop(border,item.Y);
+        }
+        if(addedTextInput is { Tag: PdfEditElement textItem } input && items.Contains(textItem)){
+            input.RenderTransform=new RotateTransform(textItem.Rotation);
+            Canvas.SetLeft(input,textItem.X);
+            Canvas.SetTop(input,textItem.Y);
         }
         var grips=EditCanvas.Children.OfType<Thumb>().Where(x=>!Equals(x.Tag,"object-rotation")).ToArray();
         if(grips.Length==2&&Equals(grips[0].Tag,"endpoint")){

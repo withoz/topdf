@@ -110,7 +110,7 @@ public partial class PdfEditorView
 {
     internal IInputElement MenuCanvasTarget=>EditCanvas;
     internal IInputElement GetMenuEditTarget(IInputElement? focused)=>
-        focused is DependencyObject element&&IsAncestorOf(element)&&IsTextCommandTarget(focused) ? focused : EditCanvas;
+        focused is DependencyObject element&&IsAncestorOf(element)&&IsTextCommandTarget(focused) ? focused : CanEditSpread ? SpreadPages : EditCanvas;
     internal void ToggleOutlineFromMenu()=>TogglePagePane(this,new RoutedEventArgs());
     internal void FindFromMenu()=>OpenPageSearch();
 }

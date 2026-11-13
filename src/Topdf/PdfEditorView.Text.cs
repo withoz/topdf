@@ -87,9 +87,19 @@ public partial class PdfEditorView
         selectedIds.Clear(); selectedSource=SourceTextItems.Single(t=>t.Id==id);selectedId="";
         var current=EditingText(selectedSource);
         EditText.Text=Page!.Elements.FirstOrDefault(x=>x.SourceTextId==id)?.Text??selectedSource.Text;SyncTextFormat(current.FontSize,current.Color,current.FontFamily,Page.Elements.FirstOrDefault(x=>x.SourceTextId==id)?.Alignment);
-        DrawElements();inlineText?.Focus();inlineText?.SelectAll();DrawPdfCarets();
+        DrawElements();
+        if (inlineText is { } input)
+        {
+            _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() => {
+                if (!ReferenceEquals(inlineText, input) || !input.IsVisible) return;
+                Keyboard.Focus(input);
+                input.SelectAll();
+                DrawPdfCarets();
+            }));
+        }
         if(Page.Elements.Any(x=>x.SourceTextId==id))QueueInlinePreview();
-        EditStatus.Text="본문을 직접 입력한 뒤 Enter로 적용하세요. Esc는 입력을 마치고 선택 도구로 돌아갑니다.";
+        EditStatus.Visibility=Visibility.Visible;
+        EditStatus.Text="본문 입력 후 다른 곳을 클릭하거나 Enter를 누르면 적용됩니다.";
     }
     void ApplyInlineText()
     {

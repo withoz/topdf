@@ -72,6 +72,19 @@ public partial class PdfEditorView
         EditTool.SelectedIndex=1;
     }
 
+    void RefreshCurrentSpreadPage() => RefreshSpreadPage(SpreadPages,EditPages.SelectedIndex);
+
+    void RefreshSpreadPage(DependencyObject parent, int index)
+    {
+        if(parent is Grid { Name:"SpreadPageSurface", DataContext:PageTile tile } host){
+            if(tile.Index==index && host.Children.OfType<Viewbox>().FirstOrDefault()?.Child is Canvas overlay)
+                RefreshSpreadGraphics(overlay,new RoutedEventArgs());
+            return;
+        }
+        for(var i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++)
+            RefreshSpreadPage(VisualTreeHelper.GetChild(parent,i),index);
+    }
+
     void RefreshSpreadGraphics(object sender, RoutedEventArgs e)
     {
         if(sender is not Canvas overlay)return;
@@ -82,26 +95,10 @@ public partial class PdfEditorView
         var rotated=page.Rotation is 90 or 270;
         overlay.Width=rotated?dimensions.Height:dimensions.Width;
         overlay.Height=rotated?dimensions.Width:dimensions.Height;
-        foreach(var element in page.Elements.Where(x=>!bakedSpreadGraphics.Contains(x.Id))){
-            if(Graphics.Contains(element.Kind))AddSpreadGraphic(overlay,element);
-            else if(element.Kind=="stamp"){
-                var image=new Image {Source=LoadImage(element.ImagePath!),Stretch=Stretch.Fill,Opacity=element.ImageOpacity};
-                PlaceSpreadVisual(overlay,image,element);
-            }else if(element.Kind is "text" or "note" or "replace"){
-                if(element.Kind=="replace"&&string.IsNullOrWhiteSpace(element.Text))continue;
-                var note=element.Kind=="note";
-                var text=new TextBlock {
-                    Text=element.Text,FontFamily=new FontFamily(element.FontFamily),
-                    TextAlignment=AlignmentOf(element),FontSize=element.FontSize,
-                    LineHeight=element.FontSize*1.35,TextWrapping=TextWrapping.Wrap,
-                    Foreground=(Brush)new BrushConverter().ConvertFromString(element.Color)!
-                };
-                var border=new AnnotationBorder {
-                    Child=text,Padding=new Thickness(note?7:1),ClipToBounds=true,
-                    Background=note?new SolidColorBrush(Color.FromRgb(255,243,175)):TextBoxFillBrush(element)
-                };
-                PlaceSpreadVisual(overlay,border,element);
-            }
+        DrawNoteRegions(overlay, page);
+        foreach(var element in page.Elements.Where(x=>!bakedSpreadGraphics.Contains(x.Id)))
+        {
+            if(CreateSpreadObjectVisual(element) is {} visual)PlaceSpreadVisual(overlay,visual,element);
         }
         if(Tool=="선택"&&tile.Index==EditPages.SelectedIndex&&selectedIds.Count>0){
             spreadSelectionOverlay=overlay;
@@ -121,6 +118,31 @@ public partial class PdfEditorView
                 AddSpreadRotationHandle(overlay,tile,items);
             if(items.Count>0)AddSpreadResizeHandle(overlay,items);
         }
+    }
+
+    FrameworkElement? CreateSpreadObjectVisual(PdfEditElement element)
+    {
+        if(Graphics.Contains(element.Kind))return CreateGraphicVisual(element);
+        if(element.Kind=="stamp"){
+            var image=new Image {Source=LoadImage(element.ImagePath!),Stretch=Stretch.Fill,Opacity=element.ImageOpacity};
+            return image;
+        }else if(element.Kind is "text" or "note" or "replace"){
+            if(element.Kind=="replace"&&string.IsNullOrWhiteSpace(element.Text))return null;
+            var note=element.Kind=="note";
+            var text=new TextBlock {
+                Text=element.Text,FontFamily=new FontFamily(element.FontFamily),
+                TextAlignment=AlignmentOf(element),FontSize=element.FontSize,
+                LineHeight=element.FontSize*1.35,TextWrapping=TextWrapping.Wrap,
+                VerticalAlignment=element.Kind=="text"?VerticalAlignment.Center:VerticalAlignment.Top,
+                Foreground=(Brush)new BrushConverter().ConvertFromString(element.Color)!
+            };
+            var border=new AnnotationBorder {
+                Child=text,Padding=new Thickness(note?NotePadding:1),ClipToBounds=true,
+                Background=note?new SolidColorBrush(Color.FromRgb(255,243,175)):TextBoxFillBrush(element)
+            };
+            return border;
+        }
+        return null;
     }
 
     bool SelectSpreadObject(Grid host,Canvas overlay,PageTile tile,Point point,ModifierKeys modifiers)
@@ -165,7 +187,10 @@ public partial class PdfEditorView
         visual.RenderTransform=new RotateTransform(element.Rotation);
         Canvas.SetLeft(visual,element.X);
         Canvas.SetTop(visual,element.Y);
-        if(index is int position)overlay.Children[position]=visual;
+        if(index is int position){
+            overlay.Children.RemoveAt(position);
+            overlay.Children.Insert(position,visual);
+        }
         else overlay.Children.Add(visual);
     }
 
@@ -185,16 +210,38 @@ public partial class PdfEditorView
             host.Children.OfType<Viewbox>().FirstOrDefault()?.Child is not Canvas overlay||
             host.ActualWidth<=0||host.ActualHeight<=0)return;
         for(var node=e.OriginalSource as DependencyObject;node!=null&&node!=host;node=VisualTreeHelper.GetParent(node))
-            if(node is Thumb)return;
+            if(node is Thumb or TextBox)return;
+        if(RegionTool.IsChecked==true){
+            RefreshSpreadGraphics(overlay,new RoutedEventArgs());
+            BeginRegion(overlay,tile.Index,e);
+            e.Handled=true;
+            return;
+        }
         if(Tool=="선택"){
             RefreshSpreadGraphics(overlay,new RoutedEventArgs());
             if(overlay.Width>0&&overlay.Height>0){
                 var point=SpreadPoint(host,overlay,e);
                 var modifiers=Keyboard.Modifiers;
-                if(SelectSpreadObject(host,overlay,tile,point,modifiers)&&modifiers==ModifierKeys.None)
-                    BeginSpreadMove(host,overlay,SpreadPoint(host,overlay,e));
+                if(SelectSpreadObject(host,overlay,tile,point,modifiers)&&modifiers==ModifierKeys.None){
+                    if(e.ClickCount==2 && Selected?.Kind is "text" or "note")BeginAddedText(overlay);
+                    else BeginSpreadMove(host,overlay,point);
+                }
             }
             e.Handled=true;
+            return;
+        }
+        if(Tool is "메모" or "글자"){
+            e.Handled=true;
+            var note=Tool=="메모";
+            ApplyInlineText();
+            RefreshSpreadGraphics(overlay,new RoutedEventArgs());
+            if(overlay.Width<=0||overlay.Height<=0)return;
+            var point=SpreadPoint(host,overlay,e);
+            SelectSpreadObject(host,overlay,tile,point,ModifierKeys.None);
+            selectedIds.Clear();selectedId="";
+            AddTextElement(point.X,point.Y,note?"메모":"텍스트",note,true);
+            EditTool.SelectedIndex=1;
+            BeginAddedText(overlay);
             return;
         }
         if(Tool=="도장"){
@@ -234,6 +281,8 @@ public partial class PdfEditorView
             if(Math.Abs(point.X-start.X)>=Math.Abs(point.Y-start.Y))point.Y=start.Y;
             else point.X=start.X;
         }
+        if(stroke.Element.Kind=="ellipse" && constrain)
+            point=CircleDragEnd(start,point,stroke.Overlay.Width,stroke.Overlay.Height);
         if(stroke.Element.Kind=="freehand"){
             if(stroke.Points.Count<10000&&point!=stroke.Points[^1])stroke.Points.Add(point);
         }else if(stroke.Points.Count==1)stroke.Points.Add(point);
@@ -264,8 +313,9 @@ public partial class PdfEditorView
 
     void MoveSpreadStroke(object sender,MouseEventArgs e)
     {
+        if(UpdateRegion(e)){e.Handled=true;return;}
         if(spreadMove is {} move&&ReferenceEquals(move.Host,sender)){
-            if(e.LeftButton==MouseButtonState.Pressed)MoveSpreadObjects(move,SpreadPoint(move.Host,move.Overlay,e));
+            if(e.LeftButton==MouseButtonState.Pressed && !PreviewSpreadMove(move,e.GetPosition(SpreadPages)))MoveSpreadObjects(move,SpreadPoint(move.Host,move.Overlay,e));
             e.Handled=true;
             return;
         }
@@ -282,8 +332,9 @@ public partial class PdfEditorView
 
     void FinishSpreadStroke(object sender,MouseButtonEventArgs e)
     {
+        if(FinishRegion(e)){e.Handled=true;return;}
         if(ReferenceEquals(spreadMove?.Host,sender)){
-            FinishSpreadMove(false);
+            FinishSpreadMove(false,e.GetPosition(SpreadPages));
             e.Handled=true;
             return;
         }
@@ -331,6 +382,7 @@ public partial class PdfEditorView
 
     void SpreadCaptureLost(object sender,MouseEventArgs e)
     {
+        if(regionCanvas!=null && !regionCanvas.IsMouseCaptured)ClearRegion();
         if(ReferenceEquals(spreadMove?.Host,sender))FinishSpreadMove(true);
         if(ReferenceEquals(spreadStroke?.PageHost,sender))CancelSpreadStroke();
     }
@@ -354,7 +406,7 @@ public partial class PdfEditorView
     async Task RestoreSpreadHistoryAsync(Stack<History> from,Stack<History> to)
     {
         if(from.Count==0)return;
-        to.Push(Capture());
+        PushHistory(to,Capture());
         Restore(from.Pop(),renderEditor:false);
         SetDirty(!IsClean());
         await ReturnToViewingAsync(true);

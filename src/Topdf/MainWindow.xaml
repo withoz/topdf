@@ -75,7 +75,25 @@
   <ListBox x:Name="DocumentTabs" Grid.Row="1" SelectedItem="{Binding SelectedItem, ElementName=Files, Mode=TwoWay}" BorderThickness="0" Background="#F5F7FA" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled" SelectionMode="Single">
    <ListBox.Style><Style TargetType="ListBox"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><Trigger Property="HasItems" Value="False"><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers></Style></ListBox.Style>
    <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
-   <ListBox.ItemTemplate><DataTemplate><DockPanel Width="174" ToolTip="{Binding Source}"><Button Content="×" Click="CloseDocument" DockPanel.Dock="Right" Padding="5,0" Margin="5,0,0,0" ToolTip="문서 닫기" AutomationProperties.Name="문서 닫기"/><TextBlock Text="{Binding TabName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/></DockPanel></DataTemplate></ListBox.ItemTemplate>
+   <ListBox.ItemContainerStyle>
+    <Style TargetType="ListBoxItem">
+     <Setter Property="Margin" Value="3,3,0,3"/>
+     <Setter Property="Padding" Value="8,2,4,2"/>
+     <Setter Property="Foreground" Value="#263C50"/>
+     <Setter Property="Template"><Setter.Value>
+      <ControlTemplate TargetType="ListBoxItem">
+       <Border x:Name="TabBorder" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+        <ContentPresenter VerticalAlignment="Center"/>
+       </Border>
+       <ControlTemplate.Triggers>
+        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="TabBorder" Property="Background" Value="#E9EFF5"/></Trigger>
+        <Trigger Property="IsSelected" Value="True"><Setter TargetName="TabBorder" Property="Background" Value="White"/><Setter TargetName="TabBorder" Property="BorderBrush" Value="#B9CBDC"/></Trigger>
+       </ControlTemplate.Triggers>
+      </ControlTemplate>
+     </Setter.Value></Setter>
+    </Style>
+   </ListBox.ItemContainerStyle>
+   <ListBox.ItemTemplate><DataTemplate><DockPanel Width="164" ToolTip="{Binding Source}"><Button Content="×" Click="CloseDocument" DockPanel.Dock="Right" Width="20" Height="20" Padding="0" BorderThickness="0" Background="Transparent" Margin="5,0,0,0" ToolTip="문서 닫기" AutomationProperties.Name="문서 닫기"/><TextBlock Text="{Binding TabName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/></DockPanel></DataTemplate></ListBox.ItemTemplate>
   </ListBox>
   <Grid x:Name="PreviewHost" Grid.Row="2" Background="White">
    <wv:WebView2 x:Name="PdfViewer" Visibility="Hidden"/>
